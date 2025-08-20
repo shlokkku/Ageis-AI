@@ -1,55 +1,83 @@
 # File: app/agents/risk_agent.py
 from langchain.agents import create_react_agent, AgentExecutor
-from langchain import hub
+from langchain.prompts import PromptTemplate
 # MODIFIED: Import the FULL list of tools
 from ..tools.tools import all_pension_tools
 
 def create_risk_agent(llm):
-    """Factory for the Risk Assessment Agent."""
+    """Factory for the Risk Analysis Agent."""
     # MODIFIED: Give the agent access to ALL available tools
     tools = all_pension_tools
     
-    # MODIFIED: Use hub prompt but override with better instructions
-    prompt = hub.pull("hwchase17/react")
-    
-    # MODIFIED: Update the prompt to override hardcoded examples
-    system_prompt = """You are a Risk Assessment Specialist. Your role is to analyze financial risk profiles and provide comprehensive risk assessments.
+    template = """**FIRST: READ YOUR INPUT CAREFULLY**
+Your input contains a user_id field. You MUST use that exact number.
+
+**EXAMPLE INPUT FORMAT:**
+{{"input": "user question", "user_id": 520}}
+
+**CRITICAL: Use the user_id from your input, NOT a placeholder!**
+
+**DEBUG STEP: Before calling any tools, show what user_id you read from input.**
+
+Answer the following questions as best you can. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+**DEBUG: I read user_id = [NUMBER] from my input**
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
 
 **CRITICAL INSTRUCTIONS:**
-- NEVER ask for user_id - it's automatically available in the context
-- ALWAYS call the analyze_risk_profile tool directly (no parameters needed)
-- The tool will automatically get the user_id from the current authenticated session
-- Focus on risk analysis, portfolio assessment, and financial risk management
+- Your input contains: {{"input": "user question", "user_id": 520}}
+- You MUST extract the user_id number from your input
+- NEVER ask for user_id - it's already provided to you
+- ALWAYS call the appropriate tools directly
+
+**TOOL SELECTION RULES:**
+1. **For pension data (income, savings, contributions, etc.)**: Use `project_pension` tool
+2. **For risk analysis**: Use `analyze_risk_profile` tool  
+3. **For fraud detection**: Use `detect_fraud` tool
+4. **For searching documents/knowledge**: Use `query_knowledge_base` tool
+
+**COMMON QUERIES AND CORRECT TOOLS:**
+- "What is my annual income?" → Use `project_pension` tool
+- "What are my current savings?" → Use `project_pension` tool
+- "What is my risk score?" → Use `analyze_risk_profile` tool
+- "Check for fraud" → Use `detect_fraud` tool
+- "Search documents about..." → Use `query_knowledge_base` tool
+
+**USER_ID EXTRACTION EXAMPLE:**
+- If your input is {{"input": "What's my risk profile?", "user_id": 520}}
+- Then extract: user_id = 520
+- Use this number when calling tools
+
+**TOOL USAGE:**
+1. Extract user_id from your input
+2. Choose the correct tool based on the query type
+3. Call tools with: {{"user_id": extracted_user_id_number, "query": "user's original question"}}
+4. Example: analyze_risk_profile({{"user_id": 520, "query": "what's my risk profile?"}})
+
+**IMPORTANT: Always pass the user's original query to tools for better context!**
 
 **Your Capabilities:**
-- Analyze portfolio risk levels and volatility using analyze_risk_profile tool
-- Assess debt-to-income ratios using analyze_risk_profile tool
-- Evaluate health and longevity risks using analyze_risk_profile tool
-- Provide risk mitigation strategies
+- Analyze current pension status using project_pension tool
+- Assess risk profiles using analyze_risk_profile tool
+- Detect fraud using detect_fraud tool
 
-**TOOL USAGE INSTRUCTIONS:**
-1. For risk analysis: Call analyze_risk_profile tool (no parameters needed)
-2. The tool automatically gets user_id from context
-3. Never ask for user_id manually
+Question: {input}
+{agent_scratchpad}"""
 
-**Keywords that trigger risk analysis:**
-- "risk profile", "risk assessment", "portfolio risk"
-- "volatility", "risk tolerance", "investment risk"
-- "financial risk", "risk analysis"
-
-**Example Response:**
-"Based on your risk profile analysis:
-- Risk Level: Low/Medium/High
-- Risk Score: X.X
-- Key Risk Factors: [list of identified risks]
-- Positive Factors: [list of strengths]
-- Recommendations: [risk mitigation strategies]"
-
-**IMPORTANT: 
-- Never ask for user_id - it's automatically available
-- Always call the analyze_risk_profile tool directly
-- The tool handles authentication automatically"""
-
-    prompt = prompt.partial(instructions=system_prompt)
+    prompt = PromptTemplate(
+        template=template,
+        input_variables=["tools", "tool_names", "input", "agent_scratchpad"]
+    )
     agent = create_react_agent(llm, tools, prompt)
     return AgentExecutor(agent=agent, tools=all_pension_tools, verbose=True, return_intermediate_steps=True)

@@ -28,6 +28,7 @@ json_llm = ChatGoogleGenerativeAI(
 # --- Tool 1: Risk Analysis ---
 class RiskToolInput(BaseModel):
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
+    query: Optional[str] = Field(description="The user's original query for context")
 
     @validator("user_id", pre=True)
     def coerce_user_id(cls, value):
@@ -99,6 +100,7 @@ def analyze_risk_profile(user_id: int = None) -> Dict[str, Any]:
 # --- Tool 2: Fraud Detection ---
 class FraudToolInput(BaseModel):
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
+    query: Optional[str] = Field(description="The user's original query for context")
 
     @validator("user_id", pre=True)
     def coerce_user_id(cls, value):
@@ -169,6 +171,7 @@ def detect_fraud(user_id: int = None) -> Dict[str, Any]:
 # --- Tool 3: Pension Projection ---
 class ProjectionToolInput(BaseModel):
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
+    query: Optional[str] = Field(description="The user's original query to parse time periods from (e.g., 'retire in 3 years')")
 
     @validator("user_id", pre=True)
     def coerce_user_id(cls, value):
@@ -180,14 +183,63 @@ class ProjectionToolInput(BaseModel):
                 return int(match.group(0))
         return None
 
+def parse_time_period_from_query(query: str, current_age: int, retirement_age: int) -> int:
+    """
+    Parse natural language queries to extract the time period for pension calculations.
+    Returns the number of years to use in calculations.
+    """
+    query_lower = query.lower()
+    
+    # Pattern 1: "retire in X years"
+    match = re.search(r'retire\s+in\s+(\d+)\s+years?', query_lower)
+    if match:
+        years = int(match.group(1))
+        print(f"🔍 Time Parsing: Found 'retire in {years} years' → Using {years} years")
+        return years
+    
+    # Pattern 2: "retire at age X"
+    match = re.search(r'retire\s+at\s+age\s+(\d+)', query_lower)
+    if match:
+        target_age = int(match.group(1))
+        years = max(0, target_age - current_age)
+        print(f"🔍 Time Parsing: Found 'retire at age {target_age}' → Using {years} years")
+        return years
+    
+    # Pattern 3: "retire early" or "retire soon"
+    if 'retire early' in query_lower or 'retire soon' in query_lower:
+        years = min(5, retirement_age - current_age)  # Assume 5 years or less
+        print(f"🔍 Time Parsing: Found 'retire early/soon' → Using {years} years")
+        return years
+    
+    # Pattern 4: "retire next year"
+    if 'retire next year' in query_lower:
+        years = 1
+        print(f"🔍 Time Parsing: Found 'retire next year' → Using {years} years")
+        return years
+    
+    # Pattern 5: "retire in X months"
+    match = re.search(r'retire\s+in\s+(\d+)\s+months?', query_lower)
+    if match:
+        months = int(match.group(1))
+        years = months / 12
+        print(f"🔍 Time Parsing: Found 'retire in {months} months' → Using {years:.1f} years")
+        return max(0.1, years)  # Minimum 0.1 years
+    
+    # Default: Use full retirement age
+    default_years = retirement_age - current_age
+    print(f"🔍 Time Parsing: No specific time found → Using default {default_years} years to retirement")
+    return default_years
+
 @tool(args_schema=ProjectionToolInput)
-def project_pension(user_id: int = None) -> Dict[str, Any]:
+def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
     """
     Provides a comprehensive pension overview including current savings, goal progress,
     years remaining, savings rate, and projected balance at retirement.
+    Can also calculate specific time-based projections based on the query.
     """
-    # PRIORITY 1: Get user_id from request context (most secure)
+    # PRIORITY 1: Get user_id from tool input (most direct)
     if user_id is None:
+        # Try to get from context as fallback
         user_id = get_current_user_id_from_context()
         if user_id:
             print(f"🔍 Context: Using user_id={user_id} from request context")
@@ -201,24 +253,38 @@ def project_pension(user_id: int = None) -> Dict[str, Any]:
     if not user_id:
         return {"error": "User not authenticated. Please log in."}
     
-    print(f"\n--- TOOL: Running Comprehensive Pension Overview for User ID: {user_id} ---")
+    print(f"🔍 Tool Debug - User ID: {user_id}, Query: {query}")
+    
     db: Session = SessionLocal()
     try:
         pension_data = db.query(models.PensionData).filter(models.PensionData.user_id == user_id).first()
         if not pension_data:
             return {"error": f"No pension data found for User ID: {user_id}"}
         
-        # Calculate comprehensive pension overview
+        # Extract all pension data fields
         current_savings = pension_data.current_savings or 0
         annual_income = pension_data.annual_income or 0
         age = pension_data.age or 0
-        retirement_goal = pension_data.retirement_age_goal or 65
+        retirement_age_goal = pension_data.retirement_age_goal or 65
         annual_contribution = pension_data.contribution_amount or 0
         employer_contribution = pension_data.employer_contribution or 0
         total_annual_contribution = annual_contribution + employer_contribution
+        pension_type = pension_data.pension_type or "Defined Contribution"
+        annual_return_rate = pension_data.annual_return_rate or 0.08
         
-        # Calculate years to retirement
-        years_to_retirement = max(0, retirement_goal - age)
+        print(f"🔍 Tool Debug - Pension Type: {pension_type}")
+        print(f"🔍 Tool Debug - Current Savings: {current_savings}")
+        print(f"🔍 Tool Debug - Annual Income: {annual_income}")
+        print(f"🔍 Tool Debug - Age: {age}")
+        print(f"🔍 Tool Debug - Retirement Goal: {retirement_age_goal}")
+        
+        # Parse time period from query if provided
+        if query:
+            years_to_retirement = parse_time_period_from_query(query, age, retirement_age_goal)
+        else:
+            years_to_retirement = max(0, retirement_age_goal - age)
+        
+        print(f"🔍 Tool Debug - Years to Retirement: {years_to_retirement}")
         
         # Calculate retirement goal (example: 10x annual income)
         retirement_goal_amount = annual_income * 10
@@ -227,7 +293,7 @@ def project_pension(user_id: int = None) -> Dict[str, Any]:
         progress_percentage = min(100, (current_savings / retirement_goal_amount) * 100) if retirement_goal_amount > 0 else 0
         
         # Determine status
-        if age >= retirement_goal:
+        if age >= retirement_age_goal:
             status = "At Retirement Age"
         elif progress_percentage >= 80:
             status = "On Track"
@@ -239,59 +305,123 @@ def project_pension(user_id: int = None) -> Dict[str, Any]:
         # Calculate savings rate
         savings_rate_percentage = (total_annual_contribution / annual_income) * 100 if annual_income > 0 else 0
         
-        # Try to get projections from the projection service
-        try:
-            from ..agents.services.projection import run_projection_agent
+        # Calculate projections based on pension type with realistic limits
+        if pension_type.lower() in ["defined contribution", "dc", "defined contribution plan"]:
+            # DEFINED CONTRIBUTION: Future value based on contributions + investment returns
+            if years_to_retirement > 0:
+                # Use more conservative return rate for longer periods
+                if years_to_retirement > 20:
+                    effective_return_rate = min(annual_return_rate, 0.06)  # Cap at 6% for very long periods
+                elif years_to_retirement > 10:
+                    effective_return_rate = min(annual_return_rate, 0.07)  # Cap at 7% for long periods
+                else:
+                    effective_return_rate = annual_return_rate
+                
+                # Future value of current savings
+                fv_current = current_savings * (1 + effective_return_rate) ** years_to_retirement
+                
+                # Future value of contributions (more conservative)
+                if total_annual_contribution > 0:
+                    fv_contributions = total_annual_contribution * ((1 + effective_return_rate) ** years_to_retirement - 1) / effective_return_rate
+                else:
+                    fv_contributions = 0
+                
+                projected_balance = fv_current + fv_contributions
+                
+                # Apply realistic limits to prevent impossible projections
+                max_reasonable_multiplier = min(10, years_to_retirement * 0.5)  # More conservative
+                max_reasonable_projection = current_savings * max_reasonable_multiplier
+                
+                if projected_balance > max_reasonable_projection:
+                    projected_balance = max_reasonable_projection
+                    print(f"🔍 Tool Debug - Capped projection from ${projected_balance:,.0f} to ${max_reasonable_projection:,.0f}")
+                
+                # Calculate scenarios with realistic limits
+                scenario_10_percent = min(projected_balance * 1.1, max_reasonable_projection * 1.1)
+                scenario_20_percent = min(projected_balance * 1.2, max_reasonable_projection * 1.2)
+                
+                print(f"🔍 Tool Debug - DC Calculation: FV Current=${fv_current:,.0f}, FV Contributions=${fv_contributions:,.0f}")
+                print(f"🔍 Tool Debug - Projected Balance: ${projected_balance:,.0f}")
+                
+            else:
+                projected_balance = current_savings
+                scenario_10_percent = current_savings
+                scenario_20_percent = current_savings
+                
+        elif pension_type.lower() in ["defined benefit", "db", "defined benefit plan"]:
+            # DEFINED BENEFIT: Pension based on salary, years of service, and benefit formula
+            # For DB plans, contributions don't directly affect the benefit
+            projected_balance = pension_data.projected_pension_amount or (annual_income * 0.6)  # 60% of final salary
+            scenario_10_percent = projected_balance
+            scenario_20_percent = projected_balance
+            print(f"🔍 Tool Debug - DB Plan: Using projected amount ${projected_balance:,.0f}")
             
-            user_data = {
-                "current_savings": current_savings,
-                "annual_income": annual_income,
-                "age": age,
-                "retirement_age": retirement_goal,
-                "annual_contribution": total_annual_contribution,
-                "risk_tolerance": pension_data.risk_tolerance,
-                "pension_type": pension_data.pension_type or "Defined Contribution"
-            }
+        else:
+            # HYBRID or UNKNOWN: Use a conservative approach
+            if years_to_retirement > 0:
+                # More conservative return rate
+                conservative_return = min(annual_return_rate * 0.8, 0.06)  # 80% of original rate, max 6%
+                projected_balance = current_savings * (1 + conservative_return) ** years_to_retirement
+                
+                # Apply realistic limits
+                max_reasonable = current_savings * min(8, years_to_retirement * 0.4)
+                if projected_balance > max_reasonable:
+                    projected_balance = max_reasonable
+                
+                scenario_10_percent = min(projected_balance * 1.1, max_reasonable * 1.1)
+                scenario_20_percent = min(projected_balance * 1.2, max_reasonable * 1.2)
+            else:
+                projected_balance = current_savings
+                scenario_10_percent = current_savings
+                scenario_20_percent = current_savings
             
-            scenario_params = {
-                "inflation_rate": 0.025,  # 2.5% inflation
-                "return_rate": 0.08,      # 8% annual return
-                "years": years_to_retirement
-            }
-            
-            projection_result = run_projection_agent(user_data, scenario_params)
-            
-            # Extract projection data
-            projected_balance = projection_result.get("projected_balance", 0)
-            nominal_projection = projection_result.get("nominal_projection", 0)
-            inflation_adjusted = projection_result.get("inflation_adjusted", True)
-            
-        except Exception as e:
-            print(f"Projection service unavailable: {e}")
-            # Fallback calculations
-            projected_balance = current_savings * (1.08 ** years_to_retirement) if years_to_retirement > 0 else current_savings
-            nominal_projection = projected_balance
-            inflation_adjusted = False
+            print(f"🔍 Tool Debug - Hybrid/Unknown: Conservative calculation ${projected_balance:,.0f}")
         
-        return {
-            "current_savings": f"${current_savings:,.0f}",
-            "retirement_goal": f"${retirement_goal_amount:,.0f}",
-            "progress_to_goal": f"{progress_percentage:.1f}%",
+        # Validation and warnings
+        validation_warnings = []
+        calculation_notes = []
+        
+        # Check for unrealistic projections
+        if projected_balance > current_savings * 20:
+            validation_warnings.append("Projection may be optimistic - consider reviewing assumptions")
+            calculation_notes.append("Large projection due to long time horizon or high return assumptions")
+        
+        if years_to_retirement < 1:
+            calculation_notes.append("User is at or past retirement age - projection shows current status")
+        
+        # Additional validation for very short time periods
+        if years_to_retirement <= 3 and projected_balance > current_savings * 2:
+            validation_warnings.append("Short-term projection seems high - consider more conservative estimates")
+            calculation_notes.append("Short time periods typically show smaller growth")
+        
+        # Format the response
+        response = {
+            "current_data": {
+                "current_savings": f"${current_savings:,.0f}",
+                "annual_income": f"${annual_income:,.0f}",
+                "age": age,
+                "retirement_age_goal": retirement_age_goal,
+                "annual_contribution": f"${total_annual_contribution:,.0f}",
+                "savings_rate": f"{savings_rate_percentage:.1f}%",
+                "pension_type": pension_type
+            },
+            "projection_analysis": {
+                "years_to_retirement": years_to_retirement,
+                "projected_balance": f"${projected_balance:,.0f}",
+                "scenario_10_percent_increase": f"${scenario_10_percent:,.0f}",
+                "scenario_20_percent_increase": f"${scenario_20_percent:,.0f}",
+                "annual_return_rate": f"{annual_return_rate * 100:.1f}%",
+                "validation_warnings": validation_warnings,
+                "calculation_notes": calculation_notes
+            },
             "status": status,
-            "years_remaining": years_to_retirement,
-            "target_retirement_age": retirement_goal,
-            "savings_rate": f"{savings_rate_percentage:.0f}%",
-            "annual_income": f"${annual_income:,.0f}",
-            "annual_contribution": f"${total_annual_contribution:,.0f}",
-            "projected_balance_at_retirement": f"${projected_balance:,.0f}",
-            "nominal_projection": f"${nominal_projection:,.0f}",
-            "assumed_annual_return": "8.0%",
-            "user_age": age,
-            "pension_type": pension_data.pension_type or "Defined Contribution",
-            "inflation_adjusted": inflation_adjusted
+            "progress_to_goal": f"{progress_percentage:.1f}%"
         }
         
+        return response
+        
     except Exception as e:
+        print(f"🔍 Tool Error: {str(e)}")
         return {"error": f"Error processing pension projection: {str(e)}"}
     finally:
         db.close()

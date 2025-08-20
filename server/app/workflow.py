@@ -230,16 +230,30 @@ def build_agent_workflow():
             if isinstance(msg, tuple) and len(msg) >= 2 and str(msg[0]).lower() in ("user", "human"):
                 last_user_text = msg[1]
                 break
-            if isinstance(msg, dict) and str(msg.get("role", "")).lower() in ("user", "human"):
+            if isinstance(msg, dict) and str(msg.get("role", "").lower()) in ("user", "human"):
                 last_user_text = msg.get("content")
                 break
 
         if not last_user_text:
             return {"messages": list(state["messages"]) + [AIMessage(content="⚠️ No user message found to process.")]}
 
-        result = agent_runnable({
+        # Get user_id from workflow state and pass it to the agent
+        user_id = state.get("user_id")
+        
+        # Create input with user_id for the agent
+        agent_input = {
             "input": last_user_text
-        })
+        }
+        
+        # If user_id is available, add it to the input so agents can access it
+        if user_id:
+            agent_input["user_id"] = user_id
+            print(f"🔍 Workflow: Passing user_id={user_id} to agent")
+            print(f"🔍 Workflow: Full agent_input={agent_input}")
+        else:
+            print(f"⚠️ Workflow: No user_id found in state: {state.keys()}")
+
+        result = agent_runnable(agent_input)
 
         # Normalize result into messages and propagate intermediate steps (tools used)
         new_messages: List[BaseMessage] = list(state["messages"])  # type: ignore[arg-type]

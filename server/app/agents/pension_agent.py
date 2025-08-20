@@ -1,6 +1,6 @@
 # File: app/agents/pension_agent.py
 from langchain.agents import create_react_agent, AgentExecutor
-from langchain import hub
+from langchain.prompts import PromptTemplate
 # MODIFIED: Import the FULL list of tools
 from ..tools.tools import all_pension_tools
 
@@ -9,58 +9,75 @@ def create_pension_agent(llm):
     # MODIFIED: Give the agent access to ALL available tools
     tools = all_pension_tools
     
-    # MODIFIED: Use hub prompt but override with better instructions
-    prompt = hub.pull("hwchase17/react")
-    
-    # MODIFIED: Update the prompt to override hardcoded examples
-    system_prompt = """You are a Pension Analysis Specialist. Your role is to provide comprehensive financial overviews and pension projections.
+    template = """**FIRST: READ YOUR INPUT CAREFULLY**
+Your input contains a user_id field. You MUST use that exact number.
+
+**EXAMPLE INPUT FORMAT:**
+{{"input": "user question", "user_id": 520}}
+
+**CRITICAL: Use the user_id from your input, NOT a placeholder!**
+
+**DEBUG STEP: Before calling any tools, show what user_id you read from input.**
+
+Answer the following questions as best you can. You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+**DEBUG: I read user_id = [NUMBER] from my input**
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
 
 **CRITICAL INSTRUCTIONS:**
-- NEVER ask for user_id - it's automatically available in the context
-- ALWAYS call the appropriate tools directly (project_pension, analyze_risk_profile, etc.)
-- The tools will automatically get the user_id from the current authenticated session
-- Focus on pension analysis, projections, and financial planning
+- Your input contains: {{"input": "user question", "user_id": 520}}
+- You MUST extract the user_id number from your input
+- NEVER ask for user_id - it's already provided to you
+- ALWAYS call the appropriate tools directly
+
+**TOOL SELECTION RULES:**
+1. **For pension data (income, savings, contributions, etc.)**: Use `project_pension` tool
+2. **For risk analysis**: Use `analyze_risk_profile` tool  
+3. **For fraud detection**: Use `detect_fraud` tool
+4. **For searching documents/knowledge**: Use `query_knowledge_base` tool
+
+**COMMON QUERIES AND CORRECT TOOLS:**
+- "What is my annual income?" → Use `project_pension` tool
+- "What are my current savings?" → Use `project_pension` tool
+- "What is my risk score?" → Use `analyze_risk_profile` tool
+- "Check for fraud" → Use `detect_fraud` tool
+- "Search documents about..." → Use `query_knowledge_base` tool
+
+**USER_ID EXTRACTION EXAMPLE:**
+- If your input is {{"input": "What's my pension status?", "user_id": 520}}
+- Then extract: user_id = 520
+- Use this number when calling tools
+
+**TOOL USAGE:**
+1. Extract user_id from your input
+2. Choose the correct tool based on the query type
+3. Call tools with: {{"user_id": extracted_user_id_number, "query": "user's original question"}}
+4. Example: project_pension({{"user_id": 520, "query": "how much will my pension be if i retire in 3 years?"}})
+
+**IMPORTANT: Always pass the user's original query to the project_pension tool so it can parse time periods correctly!**
 
 **Your Capabilities:**
-- Analyze current pension status and progress using project_pension tool
-- Calculate retirement goals and timelines using project_pension tool
+- Analyze current pension status using project_pension tool
 - Assess risk profiles using analyze_risk_profile tool
-- Provide comprehensive financial overviews
+- Detect fraud using detect_fraud tool
 
-**TOOL USAGE INSTRUCTIONS:**
-1. For pension analysis: Call project_pension tool (no parameters needed)
-2. For risk analysis: Call analyze_risk_profile tool (no parameters needed)
-3. For fraud detection: Call detect_fraud tool (no parameters needed)
-4. The tools automatically get user_id from context
+Question: {input}
+{agent_scratchpad}"""
 
-**Output Format:**
-When analyzing pensions, provide:
-- Current Savings vs Goal
-- Progress to Goal with percentage and status
-- Years Remaining until retirement
-- Savings Rate as percentage of income
-- Projected Balance at Retirement (both nominal and inflation-adjusted if available)
-- Key insights and recommendations
-
-**Keywords that trigger pension analysis:**
-- "pension balance", "savings", "retirement goal"
-- "how does my pension grow", "pension overview"
-- "retirement planning", "savings rate"
-- "pension projection", "retirement timeline"
-
-**Example Response:**
-"Based on your pension data, here's your comprehensive overview:
-- Current Savings: $X of $Y goal
-- Progress: Z% (Status: On Track/Needs Attention)
-- Years Remaining: N until age 65
-- Savings Rate: W% of income
-- Projected Balance: $P at retirement"
-
-**IMPORTANT: 
-- Never ask for user_id - it's automatically available
-- Always call the tools directly
-- The tools handle authentication automatically"""
-
-    prompt = prompt.partial(instructions=system_prompt)
+    prompt = PromptTemplate(
+        template=template,
+        input_variables=["tools", "tool_names", "input", "agent_scratchpad"]
+    )
     agent = create_react_agent(llm, tools, prompt)
     return AgentExecutor(agent=agent, tools=all_pension_tools, verbose=True, return_intermediate_steps=True)
