@@ -93,7 +93,13 @@ def analyze_risk_profile(user_id: int = None) -> Dict[str, Any]:
         Return a single JSON object with this structure: {{"risk_level": "Low/Medium/High", "risk_score": float, "positive_factors": [], "risks_identified": [], "summary": "..."}}
         """
         response = json_llm.invoke(prompt)
-        return json.loads(response.content)
+        result = json.loads(response.content)
+        
+        # Add data source information
+        result["data_source"] = "DATABASE_PENSION_DATA"
+        result["note"] = "This risk analysis is based on your pension data stored in our database, not from uploaded documents."
+        
+        return result
     finally:
         db.close()
 
@@ -164,7 +170,13 @@ def detect_fraud(user_id: int = None) -> Dict[str, Any]:
         Return a single JSON object with this structure: {{"fraud_risk": "Low/Medium/High", "fraud_score": float, "suspicious_factors": [], "recommendations": [], "summary": "..."}}
         """
         response = json_llm.invoke(prompt)
-        return json.loads(response.content)
+        result = json.loads(response.content)
+        
+        # Add data source information
+        result["data_source"] = "DATABASE_PENSION_DATA"
+        result["note"] = "This fraud detection analysis is based on your pension data stored in our database, not from uploaded documents."
+        
+        return result
     finally:
         db.close()
 
@@ -415,7 +427,9 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
                 "calculation_notes": calculation_notes
             },
             "status": status,
-            "progress_to_goal": f"{progress_percentage:.1f}%"
+            "progress_to_goal": f"{progress_percentage:.1f}%",
+            "data_source": "DATABASE_PENSION_DATA",
+            "note": "This analysis is based on your pension data stored in our database, not from uploaded documents."
         }
         
         return response
@@ -491,6 +505,154 @@ def knowledge_base_search(query: str, user_id: int = None) -> Dict[str, Any]:
         
     except Exception as e:
         return {"error": f"Error searching knowledge base: {str(e)}"}
+
+# --- Tool 5: Knowledge Base Search ---
+class KnowledgeSearchInput(BaseModel):
+    query: str = Field(description="The search query for the knowledge base.")
+    user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
+
+    @validator("user_id", pre=True)
+    def coerce_user_id(cls, value):
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            match = re.search(r"\d+", value)
+            if match:
+                return int(match.group(0))
+        return None
+
+@tool(args_schema=KnowledgeSearchInput)
+def query_knowledge_base(query: str, user_id: int = None) -> Dict[str, Any]:
+    """
+    Searches the user's uploaded PDF documents and knowledge base for relevant information.
+    Returns structured information based on the query.
+    """
+    # PRIORITY 1: Get user_id from tool input (most direct)
+    if user_id is None:
+        # Try to get from context as fallback
+        user_id = get_current_user_id_from_context()
+        if user_id:
+            print(f"🔍 Context: Using user_id={user_id} from request context")
+    
+    # PRIORITY 2: Clean up the input if it's not a clean integer
+    if user_id is None or isinstance(user_id, str):
+        user_id = extract_user_id_from_input(user_id)
+        if user_id:
+            print(f"🔍 Input Cleanup: Extracted user_id={user_id} from input")
+    
+    if not user_id:
+        return {"error": "User not authenticated. Please log in."}
+    
+    print(f"\n--- TOOL: Searching Knowledge Base for User ID: {user_id} ---")
+    
+    # 🔍 FIX: Extract actual query from JSON input if needed
+    actual_query = query
+    if query.startswith('{') and query.endswith('}'):
+        try:
+            import json
+            query_data = json.loads(query)
+            if 'query' in query_data:
+                actual_query = query_data['query']
+                print(f"🔍 Fixed: Extracted actual query: '{actual_query}' from JSON input")
+        except:
+            print(f"🔍 Warning: Could not parse JSON input, using as-is")
+    
+    try:
+        # Get the user's document collection
+        collection_name = f"user_{user_id}_docs"
+        collection = get_or_create_collection(collection_name)
+        
+        # 🔍 DEBUG: Check what we're passing to query_collection
+        print(f"🔍 Debug: actual_query = '{actual_query}' (type: {type(actual_query)})")
+        print(f"🔍 Debug: user_id = {user_id} (type: {type(user_id)})")
+        
+        # Search the collection - ensure query is a string
+        if isinstance(actual_query, str):
+            query_texts = [actual_query]
+        elif isinstance(actual_query, list):
+            query_texts = actual_query
+        else:
+            query_texts = [str(actual_query)]
+        
+        print(f"🔍 Debug: query_texts = {query_texts}")
+        
+        results = query_collection(collection, query_texts, n_results=3)
+        
+        # 🔍 DEBUG: Check what results we got back
+        print(f"🔍 Debug: results type = {type(results)}")
+        print(f"🔍 Debug: results keys = {list(results.keys()) if isinstance(results, dict) else 'Not a dict'}")
+        
+        if not results or not isinstance(results, dict) or not results.get('documents'):
+            return {
+                "found": False,
+                "message": "No relevant information found in your uploaded documents.",
+                "suggestions": [
+                    "Try rephrasing your question",
+                    "Use more specific terms",
+                    "Check if you have uploaded relevant PDF documents",
+                    "Make sure your question is related to pension, retirement, or financial planning"
+                ],
+                "user_id": user_id,
+                "query": actual_query,
+                "search_type": "PDF_DOCUMENT_SEARCH",
+                "pdf_status": "NO_PDFS_FOUND",
+                "note": "This response is from searching your uploaded PDF documents. No relevant documents were found for your query."
+            }
+        
+        # Format the results
+        formatted_results = []
+        documents = results.get('documents', [])
+        metadatas = results.get('metadatas', [])
+        distances = results.get('distances', [])
+        
+        for i, (doc, metadata, distance) in enumerate(zip(documents, metadatas, distances)):
+            # 🔍 FIX: Handle OCR placeholder content gracefully
+            content = doc
+            if isinstance(content, list):
+                content = ' '.join(str(item) for item in content)
+            
+            # Check if content is just OCR placeholder
+            if 'OCR processing required' in str(content) or 'Scanned content detected' in str(content):
+                content = "This document appears to be scanned images. The content is not searchable as text. Please upload a text-based PDF or contact support for OCR processing."
+            
+            formatted_results.append({
+                "result": i + 1,
+                "content": content,
+                "source": metadata.get('source', 'Unknown PDF') if isinstance(metadata, dict) else 'Unknown PDF',
+                "relevance_score": round(1 - distance, 3) if isinstance(distance, (int, float)) else 0.0,
+                "chunk_index": metadata.get('chunk_index', 'Unknown') if isinstance(metadata, dict) else 'Unknown'
+            })
+        
+        return {
+            "found": True,
+            "query": actual_query,
+            "results": formatted_results,
+            "total_results": len(formatted_results),
+            "summary": f"Found {len(formatted_results)} relevant sections from your uploaded documents for your query about '{actual_query}'.",
+            "user_id": user_id,
+            "search_scope": f"User {user_id}'s PDF documents",
+            "search_type": "PDF_DOCUMENT_SEARCH",
+            "pdf_status": "PDFS_FOUND_AND_SEARCHED",
+            "note": "This response is based on content extracted from your uploaded PDF documents.",
+            "recommendations": [
+                "The information above is extracted from your uploaded PDF documents",
+                "For the most accurate answers, refer to the original document sources",
+                "Consider consulting with a financial advisor for personalized advice"
+            ]
+        }
+        
+    except Exception as e:
+        print(f"❌ Error searching knowledge base: {e}")
+        import traceback
+        traceback.print_exc()  # Print full error traceback
+        return {
+            "error": f"Error searching knowledge base: {str(e)}",
+            "user_id": user_id,
+            "query": actual_query,
+            "search_type": "PDF_DOCUMENT_SEARCH",
+            "pdf_status": "ERROR_OCCURRED",
+            "note": "An error occurred while searching your PDF documents."
+        }
 
 # Global context variable for user_id (shared across the module)
 import contextvars
@@ -614,7 +776,8 @@ all_pension_tools = [
     analyze_risk_profile,
     detect_fraud,
     project_pension,
-    knowledge_base_search
+    knowledge_base_search,
+    query_knowledge_base
 ]
 
 

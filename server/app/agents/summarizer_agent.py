@@ -81,12 +81,40 @@ def create_summarizer_chain(llm):
         # Apply content guardrails
         summary_text = apply_content_guardrails(summary_text)
         
+        # 🔍 EXTRACT DATA SOURCE INDICATORS FROM TOOL RESULTS (NEW ADDITION)
+        data_source = "DATABASE_PENSION_DATA"  # Default
+        search_type = None
+        pdf_status = None
+        
+        # Check intermediate_steps for tool results
+        if state.get("intermediate_steps"):
+            for step in state["intermediate_steps"]:
+                if hasattr(step, 'tool') and hasattr(step, 'content'):
+                    tool_result = step.content
+                    if isinstance(tool_result, str):
+                        # Try to extract JSON from tool result
+                        try:
+                            import json
+                            result_data = json.loads(tool_result)
+                            if 'data_source' in result_data:
+                                data_source = result_data['data_source']
+                            if 'search_type' in result_data:
+                                search_type = result_data['search_type']
+                            if 'pdf_status' in result_data:
+                                pdf_status = result_data['pdf_status']
+                        except:
+                            pass
+        
         # Create the final response with both summary and chart data
         final_response = {
             "summary": summary_text,
             "charts": state.get("charts", {}),
             "plotly_figs": state.get("plotly_figs", {}),
-            "chart_images": state.get("chart_images", {})
+            "chart_images": state.get("chart_images", {}),
+            # 🔍 ADD THE INDICATORS (NEW ADDITION)
+            "data_source": data_source,
+            "search_type": search_type,
+            "pdf_status": pdf_status
         }
         
         # Add the structured response as a message

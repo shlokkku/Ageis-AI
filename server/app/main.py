@@ -64,6 +64,10 @@ class PromptResponse(BaseModel):
     plotly_figures: Optional[Dict[str, Any]] = None
     chart_images: Optional[Dict[str, str]] = None
     metadata: Optional[Dict[str, Any]] = None
+    # 🔍 ADD DATA SOURCE INDICATORS (NEW ADDITION)
+    data_source: Optional[str] = None
+    search_type: Optional[str] = None
+    pdf_status: Optional[str] = None
 
 class DashboardData(BaseModel):
     user_id: int
@@ -196,7 +200,11 @@ async def process_prompt(
                 'user_id': current_user.id,
                 'query': request.query,
                 'workflow_completed': True
-            }
+            },
+            # 🔍 INCLUDE THE DATA SOURCE INDICATORS (NEW ADDITION)
+            data_source=final_response.get('data_source'),
+            search_type=final_response.get('search_type'),
+            pdf_status=final_response.get('pdf_status')
         )
         
     except Exception as e:
