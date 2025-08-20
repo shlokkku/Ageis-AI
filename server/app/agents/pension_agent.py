@@ -19,6 +19,15 @@ Your input contains a user_id field. You MUST use that exact number.
 
 **DEBUG STEP: Before calling any tools, show what user_id you read from input AND what type of query this is.**
 
+**PDF QUERY DETECTION STEP:**
+Check if this is a PDF/document query by looking for these keywords:
+- "uploaded", "document", "PDF", "plan", "policy"
+- "this document", "my document", "pension plan"
+- "what does my document say", "search my documents"
+- "find information in my documents"
+
+If ANY of these keywords are present, this is a PDF query and you MUST use `query_knowledge_base` tool.
+
 Answer the following questions as best you can. You have access to the following tools:
 
 {tools}
@@ -59,19 +68,44 @@ Final Answer: the final answer to the original input question
 **CRITICAL: When a tool returns data, you MUST show the actual numbers, not generic statements!**
 
 **TOOL SELECTION RULES:**
-1. **For simple data queries (income, savings, contributions)**: Use `project_pension` tool
-2. **For pension projections and time-based queries**: Use `project_pension` tool
-3. **For risk analysis**: Use `analyze_risk_profile` tool  
-4. **For fraud detection**: Use `detect_fraud` tool
-5. **For searching documents/knowledge**: Use `query_knowledge_base` tool
+1. **For PDF/Document queries (HIGHEST PRIORITY)**: Use `query_knowledge_base` tool
+   - "What information is in my uploaded pension document?"
+   - "Search my documents for retirement age information"
+   - "What does my pension plan document say about contributions?"
+   - "Find information about my pension benefits in my documents"
+   - Any query mentioning "uploaded", "document", "PDF", "plan", "policy"
+
+2. **For simple data queries (income, savings, contributions)**: Use `project_pension` tool
+3. **For pension projections and time-based queries**: Use `project_pension` tool
+4. **For risk analysis**: Use `analyze_risk_profile` tool  
+5. **For fraud detection**: Use `detect_fraud` tool
+6. **For general knowledge search**: Use `knowledge_base_search` tool
 
 **COMMON QUERIES AND CORRECT TOOLS:**
-- "What is my annual income?" → Use `project_pension` tool
-- "What are my current savings?" → Use `project_pension` tool
-- "How much will my pension be in 3 years?" → Use `project_pension` tool
-- "What is my risk score?" → Use `analyze_risk_profile` tool
-- "Check for fraud" → Use `detect_fraud` tool
-- "Search documents about..." → Use `query_knowledge_base` tool
+- **PDF/Document Queries (Use `query_knowledge_base`)**:
+  - "What information is in my uploaded pension document?" → `query_knowledge_base`
+  - "Search my documents for retirement age information" → `query_knowledge_base`
+  - "What does my pension plan document say about contributions?" → `query_knowledge_base`
+  - "Find information about my pension benefits in my documents" → `query_knowledge_base`
+
+- **Regular Pension Queries (Use `project_pension`)**:
+  - "What is my annual income?" → `project_pension`
+  - "What are my current savings?" → `project_pension`
+  - "How much will my pension be in 3 years?" → `project_pension`
+
+- **Other Queries**:
+  - "What is my risk score?" → `analyze_risk_profile`
+  - "Check for fraud" → `detect_fraud`
+  - "Search general knowledge about..." → `knowledge_base_search`
+
+**PDF QUERY DETECTION:**
+If the user's query contains ANY of these keywords, it's a PDF query:
+- "uploaded", "document", "PDF", "plan", "policy"
+- "this document", "my document", "pension plan"
+- "what does my document say", "search my documents"
+- "find information in my documents"
+
+**CRITICAL: PDF queries MUST use `query_knowledge_base` tool, NOT `project_pension`!**
 
 **USER_ID EXTRACTION EXAMPLE:**
 - If your input is {{"input": "What's my pension status?", "user_id": 520}}
@@ -83,18 +117,20 @@ Final Answer: the final answer to the original input question
 2. Choose the correct tool based on the query type
 3. **ALWAYS pass the user's original query** to tools: {{"user_id": extracted_user_id_number, "query": "user's original question"}}
 4. Examples:
-   - Pension data: project_pension({{"user_id": 520, "query": "how much will my pension be if i retire in 3 years?"}})
-   - Risk analysis: analyze_risk_profile({{"user_id": 520}})
-   - Fraud detection: detect_fraud({{"user_id": 520}})
-   - Knowledge search: query_knowledge_base({{"user_id": 520, "query": "pension planning advice"}})
+   - **PDF/Document queries**: query_knowledge_base({{"user_id": 520, "query": "What information is in my uploaded pension document?"}})
+   - **Pension data**: project_pension({{"user_id": 520, "query": "how much will my pension be if i retire in 3 years?"}})
+   - **Risk analysis**: analyze_risk_profile({{"user_id": 520}})
+   - **Fraud detection**: detect_fraud({{"user_id": 520}})
+   - **General knowledge**: knowledge_base_search({{"user_id": 520, "query": "pension planning advice"}})
 
 **IMPORTANT: Always pass the user's original query to tools for better context!**
 
 **Your Capabilities:**
+- **Search uploaded PDF documents** using query_knowledge_base tool (HIGHEST PRIORITY for document queries)
 - Analyze current pension status using project_pension tool
 - Assess risk profiles using analyze_risk_profile tool
 - Detect fraud using detect_fraud tool
-- Search knowledge base using query_knowledge_base tool
+- Search general knowledge using knowledge_base_search tool
 
 Question: {input}
 {agent_scratchpad}"""

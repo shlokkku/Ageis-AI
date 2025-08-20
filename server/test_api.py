@@ -11,8 +11,8 @@ from typing import Dict, Any
 
 # API Configuration
 BASE_URL = "http://localhost:8000"
-TEST_EMAIL = "test@example.com"
-TEST_PASSWORD = "testpassword123"
+TEST_EMAIL = "U1004@example.com"
+TEST_PASSWORD = "password123"
 
 class PensionAPITester:
     def __init__(self):

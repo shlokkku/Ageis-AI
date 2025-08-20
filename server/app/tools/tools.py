@@ -440,16 +440,27 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
     finally:
         db.close()
 
-# --- Tool 4: Knowledge Base Search ---
+# --- Tool 4: Knowledge Base Search (Enhanced) ---
 class KnowledgeSearchInput(BaseModel):
     query: str = Field(description="The search query for the knowledge base.")
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
+
+    @validator("user_id", pre=True)
+    def coerce_user_id(cls, value):
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            match = re.search(r"\d+", value)
+            if match:
+                return int(match.group(0))
+        return None
 
 @tool(args_schema=KnowledgeSearchInput)
 def knowledge_base_search(query: str, user_id: int = None) -> Dict[str, Any]:
     """
     Searches the knowledge base for relevant information about pensions, retirement planning,
     and financial advice. Returns structured information based on the query.
+    This tool searches BOTH general pension knowledge AND the user's uploaded documents.
     """
     # PRIORITY 1: Get user_id from request context (most secure)
     if user_id is None:
@@ -467,48 +478,258 @@ def knowledge_base_search(query: str, user_id: int = None) -> Dict[str, Any]:
         return {"error": "User not authenticated. Please log in."}
     
     print(f"\n--- TOOL: Searching Knowledge Base for User ID: {user_id} ---")
+    
+    all_results = []
+    
     try:
-        # Get or create the collection
-        collection = get_or_create_collection("pension_knowledge")
+        # SEARCH 1: General pension knowledge base
+        print(f"🔍 Searching general pension knowledge base...")
+        general_collection = get_or_create_collection("pension_knowledge")
+        general_results = query_collection(general_collection, [query], n_results=2)
         
-        # Search the collection
-        results = query_collection(collection, query, n_results=3)
+        # Handle ChromaDB results properly
+        if general_results and isinstance(general_results, dict) and 'documents' in general_results:
+            general_docs = general_results.get('documents', [])
+            general_metadatas = general_results.get('metadatas', [])
+            general_distances = general_results.get('distances', [])
+            
+            # ChromaDB returns nested lists, flatten them
+            if general_docs and isinstance(general_docs[0], list):
+                general_docs = general_docs[0]
+            if general_metadatas and isinstance(general_metadatas[0], list):
+                general_metadatas = general_metadatas[0]
+            if general_distances and isinstance(general_distances[0], list):
+                general_distances = general_distances[0]
+            
+            for i, (doc, metadata, distance) in enumerate(zip(general_docs, general_metadatas, general_distances)):
+                if doc:  # Only add if document content exists
+                    all_results.append({
+                        "result": len(all_results) + 1,
+                        "content": doc,
+                        "source": "General Pension Knowledge Base",
+                        "type": "general_knowledge",
+                        "relevance_score": 1 - distance if isinstance(distance, (int, float)) else 0.5
+                    })
         
-        if not results or not results['documents']:
+        # SEARCH 2: User's uploaded PDF documents
+        print(f"🔍 Searching user's uploaded documents...")
+        user_docs_collection = get_or_create_collection(f"user_{user_id}_docs")
+        user_results = query_collection(user_docs_collection, [query], n_results=3)
+        
+        # Handle ChromaDB results properly
+        if user_results:
+            if isinstance(user_results, dict) and 'documents' in user_results:
+                user_docs = user_results.get('documents', [])
+                user_metadatas = user_results.get('metadatas', [])
+                user_distances = user_results.get('distances', [])
+                
+                # ChromaDB returns nested lists, flatten them
+                if user_docs and isinstance(user_docs[0], list):
+                    user_docs = user_docs[0]
+                if user_metadatas and isinstance(user_metadatas[0], list):
+                    user_metadatas = user_metadatas[0]
+                if user_distances and isinstance(user_distances[0], list):
+                    user_distances = user_distances[0]
+                    
+            elif isinstance(user_results, list):
+                # If it's a list, assume it's the documents directly
+                user_docs = user_results
+                user_metadatas = [{}] * len(user_results)
+                user_distances = [0.0] * len(user_results)
+            else:
+                user_docs = []
+                user_metadatas = []
+                user_distances = []
+            
+            for i, (doc, metadata, distance) in enumerate(zip(user_docs, user_metadatas, user_distances)):
+                if doc:  # Only add if document content exists
+                    # Handle distance calculation safely
+                    try:
+                        if isinstance(distance, (int, float)):
+                            relevance_score = 1 - distance
+                        elif isinstance(distance, list) and len(distance) > 0:
+                            first_distance = distance[0]
+                            if isinstance(first_distance, (int, float)):
+                                relevance_score = 1 - first_distance
+                            else:
+                                relevance_score = 0.5
+                        else:
+                            relevance_score = 0.5
+                    except (TypeError, ValueError):
+                        relevance_score = 0.5
+                    
+                    all_results.append({
+                        "result": len(all_results) + 1,
+                        "content": doc,
+                        "source": metadata.get('source', f'User {user_id} Document') if metadata else f'User {user_id} Document',
+                        "type": "user_document",
+                        "relevance_score": relevance_score
+                    })
+        
+        # If no results found anywhere
+        if not all_results:
             return {
                 "found": False,
-                "message": "No relevant information found in the knowledge base.",
+                "message": "No relevant information found in either the general knowledge base or your uploaded documents.",
                 "suggestions": [
                     "Try rephrasing your question",
                     "Use more specific terms",
-                    "Check if your question is related to pensions, retirement, or financial planning"
+                    "Check if your question is related to pensions, retirement, or financial planning",
+                    "Make sure you have uploaded relevant documents"
                 ]
             }
         
-        # Format the results
-        formatted_results = []
-        for i, (doc, metadata, distance) in enumerate(zip(results['documents'], results['metadatas'], results['distances'])):
-            formatted_results.append({
-                "result": i + 1,
-                "content": doc,
-                "source": metadata.get('source', 'Unknown'),
-                "relevance_score": 1 - distance  # Convert distance to similarity score
-            })
+        # Sort results by relevance score
+        all_results.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+        
+        # Update result numbers after sorting
+        for i, result in enumerate(all_results):
+            result["result"] = i + 1
         
         return {
             "found": True,
             "query": query,
-            "results": formatted_results,
-            "total_results": len(formatted_results),
-            "summary": f"Found {len(formatted_results)} relevant results for your query about '{query}'."
+            "results": all_results,
+            "total_results": len(all_results),
+            "search_summary": {
+                "general_knowledge_results": len([r for r in all_results if r.get('type') == 'general_knowledge']),
+                "user_document_results": len([r for r in all_results if r.get('type') == 'user_document']),
+                "total_found": len(all_results)
+            },
+            "summary": f"Found {len(all_results)} relevant results for your query about '{query}'. "
+                      f"This includes both general pension knowledge and information from your uploaded documents."
         }
         
     except Exception as e:
         return {"error": f"Error searching knowledge base: {str(e)}"}
 
-# --- Tool 5: Knowledge Base Search ---
-class KnowledgeSearchInput(BaseModel):
-    query: str = Field(description="The search query for the knowledge base.")
+# --- Tool 5: Document Analysis ---
+class DocumentAnalysisInput(BaseModel):
+    query: str = Field(description="The question or query about the uploaded document")
+    user_id: Optional[int] = Field(description="User ID to identify which documents to search. If not provided, will be retrieved from context.")
+
+@tool(args_schema=DocumentAnalysisInput)
+def analyze_uploaded_document(query: str, user_id: int = None) -> Dict[str, Any]:
+    """
+    Analyzes the user's uploaded PDF documents to answer specific questions.
+    This tool searches through all documents uploaded by the user and provides
+    relevant information based on the query.
+    """
+    # PRIORITY 1: Get user_id from request context (most secure)
+    if user_id is None:
+        user_id = get_current_user_id_from_context()
+        if user_id:
+            print(f"🔍 Context: Using user_id={user_id} from request context")
+    
+    # PRIORITY 2: Clean up the input if it's not a clean integer
+    if user_id is None or isinstance(user_id, str):
+        user_id = extract_user_id_from_input(user_id)
+        if user_id:
+            print(f"🔍 Input Cleanup: Extracted user_id={user_id} from input")
+    
+    if not user_id:
+        return {"error": "User not authenticated. Please log in."}
+    
+    print(f"\n--- TOOL: Analyzing Uploaded Documents for User ID: {user_id} ---")
+    
+    try:
+        # Search user's uploaded documents
+        user_docs_collection = get_or_create_collection(f"user_{user_id}_docs")
+        user_results = query_collection(user_docs_collection, [query], n_results=5)
+        
+        # ChromaDB returns results in different formats, handle both
+        if isinstance(user_results, dict):
+            user_docs = user_results.get('documents', [])
+            user_metadatas = user_results.get('metadatas', [])
+            user_distances = user_results.get('distances', [])
+            
+            # ChromaDB returns nested lists, flatten them
+            if user_docs and isinstance(user_docs[0], list):
+                user_docs = user_docs[0]
+            if user_metadatas and isinstance(user_metadatas[0], list):
+                user_metadatas = user_metadatas[0]
+            if user_distances and isinstance(user_distances[0], list):
+                user_distances = user_distances[0]
+                
+        elif isinstance(user_results, list):
+            # If it's a list, assume it's the documents directly
+            user_docs = user_results
+            user_metadatas = [{}] * len(user_results)
+            user_distances = [0.0] * len(user_results)
+        else:
+            return {
+                "found": False,
+                "message": f"Unexpected result format from document search: {type(user_results)}",
+                "suggestions": ["Try again or contact support"]
+            }
+        
+        if not user_docs:
+            return {
+                "found": False,
+                "message": "No uploaded documents found for analysis.",
+                "suggestions": [
+                    "Upload a PDF document first using the upload endpoint",
+                    "Check if your document was successfully processed",
+                    "Try a different query related to your uploaded content"
+                ]
+            }
+        
+        # Format the results
+        formatted_results = []
+        for i, (doc, metadata, distance) in enumerate(zip(user_docs, user_metadatas, user_distances)):
+            if doc:  # Only add if document content exists
+                # Handle distance calculation safely
+                try:
+                    if isinstance(distance, (int, float)):
+                        relevance_score = 1 - distance
+                    elif isinstance(distance, list) and len(distance) > 0:
+                        first_distance = distance[0]
+                        if isinstance(first_distance, (int, float)):
+                            relevance_score = 1 - first_distance
+                        else:
+                            relevance_score = 0.5
+                    else:
+                        relevance_score = 0.5
+                except (TypeError, ValueError):
+                    relevance_score = 0.5
+                
+                formatted_results.append({
+                    "result": i + 1,
+                    "content": doc,
+                    "source": metadata.get('source', f'User {user_id} Document') if metadata else f'User {user_id} Document',
+                    "relevance_score": relevance_score,
+                    "analysis": f"Document chunk {i+1} contains relevant information for your query: '{query}'"
+                })
+        
+        # Sort by relevance
+        formatted_results.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+        
+        # Update result numbers after sorting
+        for i, result in enumerate(formatted_results):
+            result["result"] = i + 1
+        
+        return {
+            "found": True,
+            "query": query,
+            "document_analysis": True,
+            "results": formatted_results,
+            "total_results": len(formatted_results),
+            "summary": f"Successfully analyzed your uploaded documents for '{query}'. "
+                      f"Found {len(formatted_results)} relevant document sections.",
+            "capabilities": [
+                "Search through all your uploaded PDF documents",
+                "Extract relevant information based on your questions",
+                "Provide context-aware answers from your documents",
+                "Support for multiple document types and formats"
+            ]
+        }
+        
+    except Exception as e:
+        return {"error": f"Error analyzing uploaded documents: {str(e)}"}
+
+# --- Tool 6: Enhanced PDF Document Search ---
+class PDFSearchInput(BaseModel):
+    query: str = Field(description="The search query for the PDF documents.")
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
 
     @validator("user_id", pre=True)
@@ -521,7 +742,7 @@ class KnowledgeSearchInput(BaseModel):
                 return int(match.group(0))
         return None
 
-@tool(args_schema=KnowledgeSearchInput)
+@tool(args_schema=PDFSearchInput)
 def query_knowledge_base(query: str, user_id: int = None) -> Dict[str, Any]:
     """
     Searches the user's uploaded PDF documents and knowledge base for relevant information.
@@ -777,6 +998,7 @@ all_pension_tools = [
     detect_fraud,
     project_pension,
     knowledge_base_search,
+    analyze_uploaded_document,
     query_knowledge_base
 ]
 
