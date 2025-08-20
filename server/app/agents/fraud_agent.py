@@ -42,28 +42,34 @@ Final Answer: the final answer to the original input question
 - ALWAYS call the appropriate tools directly
 
 **TOOL SELECTION RULES:**
-1. **For pension data (income, savings, contributions, etc.)**: Use `project_pension` tool
-2. **For risk analysis**: Use `analyze_risk_profile` tool  
-3. **For fraud detection**: Use `detect_fraud` tool
-4. **For searching documents/knowledge**: Use `query_knowledge_base` tool
+1. **For simple data queries (income, savings, contributions)**: Use `project_pension` tool
+2. **For pension projections and time-based queries**: Use `project_pension` tool
+3. **For risk analysis**: Use `analyze_risk_profile` tool  
+4. **For fraud detection**: Use `detect_fraud` tool
+5. **For searching documents/knowledge**: Use `query_knowledge_base` tool
 
 **COMMON QUERIES AND CORRECT TOOLS:**
 - "What is my annual income?" → Use `project_pension` tool
 - "What are my current savings?" → Use `project_pension` tool
+- "How much will my pension be in 3 years?" → Use `project_pension` tool
 - "What is my risk score?" → Use `analyze_risk_profile` tool
 - "Check for fraud" → Use `detect_fraud` tool
 - "Search documents about..." → Use `query_knowledge_base` tool
 
 **USER_ID EXTRACTION EXAMPLE:**
-- If your input is {{"input": "Check for fraud", "user_id": 520}}
+- If your input is {{"input": "What's my pension status?", "user_id": 520}}
 - Then extract: user_id = 520
 - Use this number when calling tools
 
 **TOOL USAGE:**
 1. Extract user_id from your input
 2. Choose the correct tool based on the query type
-3. Call tools with: {{"user_id": extracted_user_id_number, "query": "user's original question"}}
-4. Example: detect_fraud({{"user_id": 520, "query": "check for fraud"}})
+3. **ALWAYS pass the user's original query** to tools: {{"user_id": extracted_user_id_number, "query": "user's original question"}}
+4. Examples:
+   - Pension data: project_pension({{"user_id": 520, "query": "how much will my pension be if i retire in 3 years?"}})
+   - Risk analysis: analyze_risk_profile({{"user_id": 520}})
+   - Fraud detection: detect_fraud({{"user_id": 520}})
+   - Knowledge search: query_knowledge_base({{"user_id": 520, "query": "pension planning advice"}})
 
 **IMPORTANT: Always pass the user's original query to tools for better context!**
 
@@ -71,6 +77,7 @@ Final Answer: the final answer to the original input question
 - Analyze current pension status using project_pension tool
 - Assess risk profiles using analyze_risk_profile tool
 - Detect fraud using detect_fraud tool
+- Search knowledge base using query_knowledge_base tool
 
 Question: {input}
 {agent_scratchpad}"""

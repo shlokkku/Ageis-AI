@@ -334,14 +334,14 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
                 
                 if projected_balance > max_reasonable_projection:
                     projected_balance = max_reasonable_projection
-                    print(f"🔍 Tool Debug - Capped projection from ${projected_balance:,.0f} to ${max_reasonable_projection:,.0f}")
+                    print(f"🔍 Tool Debug - Capped projection from ₹{projected_balance:,.0f} to ₹{max_reasonable_projection:,.0f}")
                 
                 # Calculate scenarios with realistic limits
                 scenario_10_percent = min(projected_balance * 1.1, max_reasonable_projection * 1.1)
                 scenario_20_percent = min(projected_balance * 1.2, max_reasonable_projection * 1.2)
                 
-                print(f"🔍 Tool Debug - DC Calculation: FV Current=${fv_current:,.0f}, FV Contributions=${fv_contributions:,.0f}")
-                print(f"🔍 Tool Debug - Projected Balance: ${projected_balance:,.0f}")
+                print(f"🔍 Tool Debug - DC Calculation: FV Current=₹{fv_current:,.0f}, FV Contributions=₹{fv_contributions:,.0f}")
+                print(f"🔍 Tool Debug - Projected Balance: ₹{projected_balance:,.0f}")
                 
             else:
                 projected_balance = current_savings
@@ -354,7 +354,7 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
             projected_balance = pension_data.projected_pension_amount or (annual_income * 0.6)  # 60% of final salary
             scenario_10_percent = projected_balance
             scenario_20_percent = projected_balance
-            print(f"🔍 Tool Debug - DB Plan: Using projected amount ${projected_balance:,.0f}")
+            print(f"🔍 Tool Debug - DB Plan: Using projected amount ₹{projected_balance:,.0f}")
             
         else:
             # HYBRID or UNKNOWN: Use a conservative approach
@@ -375,7 +375,7 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
                 scenario_10_percent = current_savings
                 scenario_20_percent = current_savings
             
-            print(f"🔍 Tool Debug - Hybrid/Unknown: Conservative calculation ${projected_balance:,.0f}")
+            print(f"🔍 Tool Debug - Hybrid/Unknown: Conservative calculation ₹{projected_balance:,.0f}")
         
         # Validation and warnings
         validation_warnings = []
@@ -397,19 +397,19 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
         # Format the response
         response = {
             "current_data": {
-                "current_savings": f"${current_savings:,.0f}",
-                "annual_income": f"${annual_income:,.0f}",
+                "current_savings": f"₹{current_savings:,.0f}",
+                "annual_income": f"₹{annual_income:,.0f}",
                 "age": age,
                 "retirement_age_goal": retirement_age_goal,
-                "annual_contribution": f"${total_annual_contribution:,.0f}",
+                "annual_contribution": f"₹{total_annual_contribution:,.0f}",
                 "savings_rate": f"{savings_rate_percentage:.1f}%",
                 "pension_type": pension_type
             },
             "projection_analysis": {
                 "years_to_retirement": years_to_retirement,
-                "projected_balance": f"${projected_balance:,.0f}",
-                "scenario_10_percent_increase": f"${scenario_10_percent:,.0f}",
-                "scenario_20_percent_increase": f"${scenario_20_percent:,.0f}",
+                "projected_balance": f"₹{projected_balance:,.0f}",
+                "scenario_10_percent_increase": f"₹{scenario_10_percent:,.0f}",
+                "scenario_20_percent_increase": f"₹{scenario_20_percent:,.0f}",
                 "annual_return_rate": f"{annual_return_rate * 100:.1f}%",
                 "validation_warnings": validation_warnings,
                 "calculation_notes": calculation_notes

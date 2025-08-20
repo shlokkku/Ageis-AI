@@ -57,7 +57,10 @@ If a user asks about these topics, route to "FINISH" and explain that you can on
 Your available agents are:
 - `risk_analyst`: For questions about financial risk, volatility, and portfolio diversity.
 - `fraud_detector`: For questions about suspicious transactions and fraud.
-- `projection_specialist`: For questions about future pension growth and projections.
+- `projection_specialist`: For questions about future pension growth, projections, and basic pension data like:
+  * Current savings and income
+  * Pension projections over time
+  * Basic "what if" questions about contributions
 - `visualizer`: To be used when the user explicitly requests charts/visualizations OR when you have data that would benefit from visualization (like projections, risk scores, or fraud analysis).
 - `summarizer`: To be used as the VERY LAST STEP to consolidate all findings and give a final, friendly answer to the user.
 
@@ -78,6 +81,9 @@ EXAMPLES:
 - "Is this transaction fraudulent?" → fraud_detector → visualizer → summarizer
 - "How does my pension grow over time? Show me a chart." → projection_specialist → visualizer → summarizer
 - "How much will my pension be worth?" → projection_specialist → summarizer (no visualization needed)
+- "What is my annual income?" → projection_specialist → summarizer (basic data query)
+- "What are my current savings?" → projection_specialist → summarizer (basic data query)
+- "How much will my pension be in 3 years?" → projection_specialist → summarizer (time-based projection)
 
 User's question:
 {messages}"""

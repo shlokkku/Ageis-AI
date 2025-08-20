@@ -95,8 +95,18 @@ def build_agent_workflow():
                 for step in state.get("intermediate_steps", [])
                 if hasattr(step[0], "tool") and step[0].tool == "detect_fraud"
             )
+            has_financial_modeling = any(
+                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
+                for step in state.get("intermediate_steps", [])
+                if hasattr(step[0], "tool") and step[0].tool == "project_pension"
+            )
+            has_simple_data = any(
+                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
+                for step in state.get("intermediate_steps", [])
+                if hasattr(step[0], "tool") and step[0].tool == "query_knowledge_base"
+            )
             
-            print(f"🔍 Supervisor: Tool usage detected - has_projection={bool(has_projection)}, has_risk={bool(has_risk)}, has_fraud={bool(has_fraud)}")
+            print(f"🔍 Supervisor: Tool usage detected - has_projection={bool(has_projection)}, has_risk={bool(has_risk)}, has_fraud={bool(has_fraud)}, has_financial_modeling={bool(has_financial_modeling)}, has_simple_data={bool(has_simple_data)}")
             
             # Enhanced decision logic for visualization
             should_visualize = (
@@ -112,11 +122,12 @@ def build_agent_workflow():
                 # Only visualize for explicit visualization requests, not general queries
                 (has_projection and ("chart" in original_query or "graph" in original_query or "visual" in original_query)) or
                 (has_risk and ("chart" in original_query or "graph" in original_query)) or
-                (has_fraud and ("chart" in original_query or "graph" in original_query))
+                (has_fraud and ("chart" in original_query or "graph" in original_query)) or
+                (has_financial_modeling and ("chart" in original_query or "graph" in original_query or "visual" in original_query))
             )
             
             print(f"🔍 Supervisor Decision: original_query='{original_query}', should_visualize={should_visualize}")
-            print(f"   has_projection={has_projection}, has_risk={has_risk}, has_fraud={has_fraud}")
+            print(f"   has_projection={has_projection}, has_risk={has_risk}, has_fraud={has_fraud}, has_financial_modeling={has_financial_modeling}, has_simple_data={has_simple_data}")
             
             if should_visualize:
                 print("   ✅ Routing to visualizer")
@@ -136,8 +147,11 @@ def build_agent_workflow():
                 user_query = msg.get("content", "")
                 break
             elif isinstance(msg, tuple) and len(msg) >= 2 and str(msg[0]) == "user":
-                user_query = msg[1]
+                user_query = str(msg[1])
                 break
+        
+        # Initialize should_visualize for first pass (default to False)
+        should_visualize = False
         
         # Check for blocked content
         blocked_patterns = {
