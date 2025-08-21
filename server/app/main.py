@@ -24,7 +24,12 @@ app = FastAPI(title="Pension AI API", version="1.0.0")
 # ---------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173",  # Added IP address
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"   # Added IP address
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -482,158 +487,286 @@ async def get_advisor_dashboard(current_user: models.User = Depends(get_current_
 
 @app.get("/regulator/dashboard")
 async def get_regulator_dashboard(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Regulator dashboard - fraud-focused data and risk analysis"""
+    """Regulator dashboard - all members data for oversight"""
     if current_user.role != "regulator":
         raise HTTPException(status_code=403, detail="Only regulators can access this endpoint")
     
-    # Get all pension data for fraud analysis using raw SQL
-    fraud_query = text("""
+    # Get ALL users' pension data (similar to advisor but without advisor-client relationship filter)
+    all_users_query = text("""
         SELECT 
             u.id as user_id,
             u.full_name,
             u.email,
-            p.age,
-            p.gender,
-            p.country,
-            p.annual_income,
-            p.current_savings,
-            p.risk_tolerance,
-            p.suspicious_flag,
-            p.anomaly_score,
-            p.transaction_amount,
-            p.transaction_date,
-            p.geo_location,
-            p.ip_address,
-            p.device_id,
-            p.time_of_transaction,
-            p.transaction_pattern_score,
-            p.previous_fraud_flag,
-            p.account_age,
-            p.portfolio_diversity_score,
-            p.volatility,
-            p.debt_level,
-            p.monthly_expenses,
-            p.savings_rate
+            u.role,
+            COALESCE(p.age, 0) as age,
+            COALESCE(p.gender, 'Unknown') as gender,
+            COALESCE(p.country, 'Unknown') as country,
+            COALESCE(p.employment_status, 'Unknown') as employment_status,
+            COALESCE(p.annual_income, 0) as annual_income,
+            COALESCE(p.current_savings, 0) as current_savings,
+            COALESCE(p.retirement_age_goal, 65) as retirement_age_goal,
+            COALESCE(p.risk_tolerance, 'Unknown') as risk_tolerance,
+            COALESCE(p.contribution_amount, 0) as contribution_amount,
+            COALESCE(p.employer_contribution, 0) as employer_contribution,
+            COALESCE(p.total_annual_contribution, 0) as total_annual_contribution,
+            COALESCE(p.years_contributed, 0) as years_contributed,
+            COALESCE(p.projected_pension_amount, 0) as projected_pension_amount,
+            COALESCE(p.expected_annual_payout, 0) as expected_annual_payout,
+            COALESCE(p.portfolio_diversity_score, 0) as portfolio_diversity_score,
+            COALESCE(p.volatility, 0) as volatility,
+            COALESCE(p.suspicious_flag, 'False') as suspicious_flag,
+            COALESCE(p.anomaly_score, 0) as anomaly_score,
+            COALESCE(p.marital_status, 'Unknown') as marital_status,
+            COALESCE(p.number_of_dependents, 0) as number_of_dependents,
+            COALESCE(p.education_level, 'Unknown') as education_level,
+            COALESCE(p.health_status, 'Unknown') as health_status,
+            COALESCE(p.debt_level, 0) as debt_level,
+            COALESCE(p.monthly_expenses, 0) as monthly_expenses,
+            COALESCE(p.savings_rate, 0) as savings_rate,
+            COALESCE(p.investment_experience_level, 'Unknown') as investment_experience_level,
+            COALESCE(p.financial_goals, 'Unknown') as financial_goals,
+            COALESCE(p.insurance_coverage, 'Unknown') as insurance_coverage,
+            COALESCE(p.pension_type, 'Unknown') as pension_type
         FROM users u
-        INNER JOIN pension_data p ON u.id = p.user_id
-        ORDER BY p.anomaly_score DESC NULLS LAST
+        LEFT JOIN pension_data p ON u.id = p.user_id
+        WHERE u.role = 'resident'
+        ORDER BY COALESCE(p.anomaly_score, 0) DESC
     """)
     
-    result = db.execute(fraud_query)
-    all_data = result.fetchall()
+    result = db.execute(all_users_query)
+    all_users_data = result.fetchall()
     
-    if not all_data:
+    if not all_users_data:
         return {
+            "regulator_id": current_user.id,
             "total_users": 0,
-            "fraud_analysis": {},
-            "risk_distribution": {},
-            "geographic_analysis": {}
+            "grouped_data": {},
+            "summary": {
+                "total_users": 0,
+                "avg_age": 0,
+                "avg_income": 0,
+                "avg_savings": 0,
+                "risk_distribution": {},
+                "fraud_risk_summary": {"high": 0, "medium": 0, "low": 0}
+            }
         }
     
-    # Fraud risk analysis
-    fraud_groups = {
-        "High Risk": [],
-        "Medium Risk": [],
-        "Low Risk": [],
-        "Unknown": []
-    }
+    # Group users by risk tolerance (same logic as advisor)
+    risk_groups = {}
+    age_groups = {}
+    income_groups = {}
     
-    # Geographic analysis
-    geographic_data = {}
-    
-    # Risk distribution
+    total_users = len(all_users_data)
+    total_age = 0
+    total_income = 0
+    total_savings = 0
     risk_distribution = {}
+    fraud_risk_summary = {"high": 0, "medium": 0, "low": 0}
     
-    total_users = len(all_data)
-    high_risk_count = 0
-    medium_risk_count = 0
-    low_risk_count = 0
-    total_suspicious = 0
-    
-    for data in all_data:
-        # Categorize by fraud risk
-        if data.anomaly_score and data.anomaly_score > 0.8:
-            fraud_groups["High Risk"].append(data)
-            high_risk_count += 1
-        elif data.anomaly_score and data.anomaly_score > 0.5:
-            fraud_groups["Medium Risk"].append(data)
-            medium_risk_count += 1
-        elif data.anomaly_score and data.anomaly_score <= 0.5:
-            fraud_groups["Low Risk"].append(data)
-            low_risk_count += 1
-        else:
-            fraud_groups["Unknown"].append(data)
+    for user in all_users_data:
+        # Risk tolerance grouping
+        risk = user.risk_tolerance if user.risk_tolerance != "Unknown" else "Unknown"
+        if risk not in risk_groups:
+            risk_groups[risk] = []
+        risk_groups[risk].append(user)
         
-        # Geographic analysis
-        geo = data.geo_location or "Unknown"
-        if geo not in geographic_data:
-            geographic_data[geo] = {
-                "count": 0,
-                "high_risk": 0,
-                "medium_risk": 0,
-                "low_risk": 0,
-                "total_anomaly_score": 0
-            }
+        # Age grouping
+        if user.age and user.age > 0:
+            age_group = f"{(user.age // 10) * 10}-{(user.age // 10) * 10 + 9}"
+            if age_group not in age_groups:
+                age_groups[age_group] = []
+            age_groups[age_group].append(user)
         
-        geographic_data[geo]["count"] += 1
-        if data.anomaly_score:
-            geographic_data[geo]["total_anomaly_score"] += data.anomaly_score
-            
-            if data.anomaly_score > 0.8:
-                geographic_data[geo]["high_risk"] += 1
-            elif data.anomaly_score > 0.5:
-                geographic_data[geo]["medium_risk"] += 1
+        # Income grouping
+        if user.annual_income and user.annual_income > 0:
+            if user.annual_income < 50000:
+                income_group = "Low (&lt;£50k)"
+            elif user.annual_income < 100000:
+                income_group = "Medium (£50k-£100k)"
             else:
-                geographic_data[geo]["low_risk"] += 1
+                income_group = "High (&gt;£100k)"
+            
+            if income_group not in income_groups:
+                income_groups[income_group] = []
+            income_groups[income_group].append(user)
         
-        # Risk tolerance distribution
-        risk = data.risk_tolerance or "Unknown"
+        # Calculate totals for summary
+        if user.age and user.age > 0:
+            total_age += user.age
+        if user.annual_income and user.annual_income > 0:
+            total_income += user.annual_income
+        if user.current_savings and user.current_savings > 0:
+            total_savings += user.current_savings
+        
+        # Risk distribution
         if risk not in risk_distribution:
             risk_distribution[risk] = 0
         risk_distribution[risk] += 1
         
-        # Count suspicious transactions
-        if data.suspicious_flag == "True":
-            total_suspicious += 1
+        # Fraud risk summary
+        if user.anomaly_score and user.anomaly_score > 0:
+            if user.anomaly_score > 0.8:
+                fraud_risk_summary["high"] += 1
+            elif user.anomaly_score > 0.5:
+                fraud_risk_summary["medium"] += 1
+            else:
+                fraud_risk_summary["low"] += 1
     
-    # Calculate geographic averages
-    for geo in geographic_data:
-        if geographic_data[geo]["count"] > 0:
-            geographic_data[geo]["avg_anomaly_score"] = round(
-                geographic_data[geo]["total_anomaly_score"] / geographic_data[geo]["count"], 3
-            )
+    # Calculate averages
+    avg_age = total_age / total_users if total_users > 0 else 0
+    avg_income = total_income / total_users if total_users > 0 else 0
+    avg_savings = total_savings / total_users if total_users > 0 else 0
     
     return {
+        "regulator_id": current_user.id,
         "total_users": total_users,
-        "fraud_analysis": {
-            "high_risk_count": high_risk_count,
-            "medium_risk_count": medium_risk_count,
-            "low_risk_count": low_risk_count,
-            "total_suspicious": total_suspicious,
-            "risk_groups": {
-                risk_level: {
-                    "count": len(data_list),
+        "grouped_data": {
+            "by_risk_tolerance": {
+                risk: {
+                    "count": len(users),
                     "users": [
                         {
-                            "user_id": d.user_id,
-                            "full_name": d.full_name,
-                            "age": d.age,
-                            "country": d.country,
-                            "annual_income": d.annual_income,
-                            "anomaly_score": d.anomaly_score,
-                            "suspicious_flag": d.suspicious_flag,
-                            "transaction_amount": d.transaction_amount,
-                            "geo_location": d.geo_location,
-                            "ip_address": d.ip_address,
-                            "transaction_pattern_score": d.transaction_pattern_score,
-                            "previous_fraud_flag": d.previous_fraud_flag
-                        } for d in data_list
+                            "user_id": u.user_id,
+                            "full_name": u.full_name,
+                            "age": u.age,
+                            "annual_income": u.annual_income,
+                            "current_savings": u.current_savings,
+                            "risk_tolerance": u.risk_tolerance,
+                            "anomaly_score": u.anomaly_score,
+                            "role": u.role
+                        } for u in users
                     ]
-                } for risk_level, data_list in fraud_groups.items() if data_list
+                } for risk, users in risk_groups.items()
+            },
+            "by_age_group": {
+                age_group: {
+                    "count": len(users),
+                    "users": [
+                        {
+                            "user_id": u.user_id,
+                            "full_name": u.full_name,
+                            "age": u.age,
+                            "annual_income": u.annual_income,
+                            "current_savings": u.current_savings,
+                            "risk_tolerance": u.risk_tolerance,
+                            "role": u.role
+                        } for u in users
+                    ]
+                } for age_group, users in age_groups.items()
+            },
+            "by_income_level": {
+                income_group: {
+                    "count": len(users),
+                    "users": [
+                        {
+                            "user_id": u.user_id,
+                            "full_name": u.full_name,
+                            "age": u.age,
+                            "annual_income": u.annual_income,
+                            "current_savings": u.current_savings,
+                            "risk_tolerance": u.risk_tolerance,
+                            "role": u.role
+                        } for u in users
+                    ]
+                } for income_group, users in income_groups.items()
             }
         },
-        "risk_distribution": risk_distribution,
-        "geographic_analysis": geographic_data
+        "summary": {
+            "total_users": total_users,
+            "avg_age": round(avg_age, 1),
+            "avg_income": round(avg_income, 2),
+            "avg_savings": round(avg_savings, 2),
+            "risk_distribution": risk_distribution,
+            "fraud_risk_summary": fraud_risk_summary
+        }
+    }
+
+@app.get("/users/all")
+async def get_all_users(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get all users for regulator oversight"""
+    if current_user.role != "regulator":
+        raise HTTPException(status_code=403, detail="Only regulators can access this endpoint")
+    
+    # Get all users with basic information
+    users_query = text("""
+        SELECT 
+            u.id,
+            u.full_name,
+            u.email,
+            u.role,
+            p.age,
+            p.current_savings,
+            p.annual_income,
+            p.risk_tolerance,
+            p.anomaly_score
+        FROM users u
+        LEFT JOIN pension_data p ON u.id = p.user_id
+        ORDER BY u.id
+    """)
+    
+    result = db.execute(users_query)
+    users = result.fetchall()
+    
+    return {
+        "users": [
+            {
+                "id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "role": user.role,
+                "age": user.age,
+                "current_savings": user.current_savings or 0,
+                "annual_income": user.annual_income or 0,
+                "risk_tolerance": user.risk_tolerance or "Unknown",
+                "anomaly_score": user.anomaly_score or 0
+            } for user in users
+        ],
+        "total_count": len(users)
+    }
+
+@app.get("/resident/dashboard")
+async def get_resident_dashboard(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get resident dashboard data"""
+    if current_user.role != "resident":
+        raise HTTPException(status_code=403, detail="Only residents can access this endpoint")
+    
+    # Get resident's pension data
+    resident_query = text("""
+        SELECT 
+            u.id,
+            u.full_name,
+            u.email,
+            p.age,
+            p.current_savings,
+            p.annual_income,
+            p.risk_tolerance,
+            p.anomaly_score,
+            p.projected_pension_amount
+        FROM users u
+        LEFT JOIN pension_data p ON u.id = p.user_id
+        WHERE u.id = :user_id
+    """)
+    
+    result = db.execute(resident_query, {"user_id": current_user.id})
+    resident_data = result.fetchone()
+    
+    if not resident_data:
+        raise HTTPException(status_code=404, detail="Resident data not found")
+    
+    return {
+        "user": {
+            "id": resident_data.id,
+            "full_name": resident_data.full_name,
+            "email": resident_data.email
+        },
+        "pension_data": {
+            "age": resident_data.age,
+            "current_savings": resident_data.current_savings or 0,
+            "annual_income": resident_data.annual_income or 0,
+            "risk_tolerance": resident_data.risk_tolerance or "Unknown",
+            "anomaly_score": resident_data.anomaly_score or 0,
+            "projected_pension_amount": resident_data.projected_pension_amount or 0
+        }
     }
 
 @app.get("/regulator/user/{user_id}/details")
@@ -646,7 +779,7 @@ async def get_regulator_user_details(
     if current_user.role != "regulator":
         raise HTTPException(status_code=403, detail="Only regulators can access this endpoint")
     
-    # Get detailed user and pension data using raw SQL
+    # Get detailed user and pension data using raw SQL (same as advisor client details)
     user_query = text("""
         SELECT 
             u.id as user_id,
@@ -655,7 +788,7 @@ async def get_regulator_user_details(
             u.role,
             p.*
         FROM users u
-        INNER JOIN pension_data p ON u.id = p.user_id
+        LEFT JOIN pension_data p ON u.id = p.user_id
         WHERE u.id = :user_id
     """)
     
@@ -666,11 +799,10 @@ async def get_regulator_user_details(
         raise HTTPException(status_code=404, detail="User not found")
     
     return {
-        "user": {
+        "client": {
             "id": user_data.user_id,
             "full_name": user_data.full_name,
-            "email": user_data.email,
-            "role": user_data.role
+            "email": user_data.email
         },
         "pension_data": {
             "demographics": {
@@ -681,8 +813,7 @@ async def get_regulator_user_details(
                 "marital_status": user_data.marital_status,
                 "number_of_dependents": user_data.number_of_dependents,
                 "education_level": user_data.education_level,
-                "health_status": user_data.health_status,
-                "life_expectancy_estimate": user_data.life_expectancy_estimate
+                "health_status": user_data.health_status
             },
             "financial": {
                 "annual_income": user_data.annual_income,
@@ -699,8 +830,7 @@ async def get_regulator_user_details(
                 "years_contributed": user_data.years_contributed,
                 "projected_pension_amount": user_data.projected_pension_amount,
                 "expected_annual_payout": user_data.expected_annual_payout,
-                "pension_type": user_data.pension_type,
-                "withdrawal_strategy": user_data.withdrawal_strategy
+                "pension_type": user_data.pension_type
             },
             "investment": {
                 "risk_tolerance": user_data.risk_tolerance,
@@ -710,19 +840,11 @@ async def get_regulator_user_details(
                 "volatility": user_data.volatility,
                 "portfolio_diversity_score": user_data.portfolio_diversity_score
             },
-            "fraud_indicators": {
+            "risk_indicators": {
                 "suspicious_flag": user_data.suspicious_flag,
                 "anomaly_score": user_data.anomaly_score,
                 "transaction_amount": user_data.transaction_amount,
-                "transaction_date": user_data.transaction_date,
-                "transaction_channel": user_data.transaction_channel,
-                "ip_address": user_data.ip_address,
-                "device_id": user_data.device_id,
-                "geo_location": user_data.geo_location,
-                "time_of_transaction": user_data.time_of_transaction,
-                "transaction_pattern_score": user_data.transaction_pattern_score,
-                "previous_fraud_flag": user_data.previous_fraud_flag,
-                "account_age": user_data.account_age
+                "transaction_date": user_data.transaction_date
             }
         }
     }
