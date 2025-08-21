@@ -12,10 +12,11 @@ import {
   CurrencyPoundIcon,
   UsersIcon,
   BanknotesIcon,
-  ShieldExclamationIcon
+  ShieldExclamationIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline';
 import Plot from 'react-plotly.js';
-import { apiClient } from '../../services/api';
+import { apiClient, tokenManager } from '../../services/api';
 import type { AdvisorDashboardData, AdvisorClient, ClientDetails } from '../../services/api';
 
 interface Message {
@@ -37,6 +38,7 @@ const AdvisorDashboard: React.FC = () => {
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentClientIndex, setCurrentClientIndex] = useState(0);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const quickQueries = [
     "Show risk analysis",
@@ -49,6 +51,12 @@ const AdvisorDashboard: React.FC = () => {
   // Load dashboard data on component mount
   useEffect(() => {
     loadDashboardData();
+  }, []);
+
+  // Get current user on component mount
+  useEffect(() => {
+    const user = tokenManager.getUser();
+    setCurrentUser(user);
   }, []);
 
   // Load client details when a client is selected
@@ -194,6 +202,12 @@ const AdvisorDashboard: React.FC = () => {
     return 'text-green-600 bg-green-100';
   };
 
+  const handleLogout = () => {
+    tokenManager.logout();
+    // Redirect to landing page or refresh the page
+    window.location.href = '/';
+  };
+
   if (loadingDashboard) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -252,9 +266,41 @@ const AdvisorDashboard: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {/* Status Indicator */}
+            <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 rounded-full border border-green-200">
+              <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-sm text-green-700 font-medium">Connected</span>
+            </div>
+            
+            {/* User Info */}
+            <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <UserIcon className="h-5 w-5" />
+              <span>Advisor Dashboard</span>
+            </div>
+
+            {/* Dashboard Stats */}
             <div className="text-right">
               <p className="text-sm font-medium text-gray-900">{dashboardData.total_clients} Active Clients</p>
               <p className="text-xs text-gray-500">Avg Age: {dashboardData.summary.avg_age}</p>
+            </div>
+
+            {/* User Details and Logout */}
+            <div className="flex items-center space-x-3">
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-900">
+                  Welcome, {currentUser?.full_name || currentUser?.username || 'Advisor'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  ID: {currentUser?.id || 'N/A'}
+                </p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors duration-200"
+              >
+                <ArrowRightOnRectangleIcon className="h-4 w-4" />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
             </div>
           </div>
         </div>
