@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Plot from 'react-plotly.js';
-import { apiClient } from '../../services/api';
+import { apiClient, tokenManager } from '../../services/api';
 import { 
   Shield, 
   Users, 
@@ -65,6 +65,7 @@ const RegulatorDashboard: React.FC = () => {
   const [selectedRiskLevel, setSelectedRiskLevel] = useState<string>('all');
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<string>('all');
   const [selectedIncomeLevel, setSelectedIncomeLevel] = useState<string>('all');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const quickQueries = [
     "Show high-risk members",
@@ -80,6 +81,12 @@ const RegulatorDashboard: React.FC = () => {
     loadRegulatorDashboard();
   }, []);
 
+  // Get current user on component mount
+  useEffect(() => {
+    const user = tokenManager.getUser();
+    setCurrentUser(user);
+  }, []);
+
   // Initialize welcome message
   useEffect(() => {
     if (regulatorData) {
@@ -93,6 +100,12 @@ const RegulatorDashboard: React.FC = () => {
       ]);
     }
   }, [regulatorData]);
+
+  const handleLogout = () => {
+    tokenManager.logout();
+    // Redirect to landing page or refresh the page
+    window.location.href = '/';
+  };
 
   const loadRegulatorDashboard = async () => {
     try {
@@ -238,6 +251,13 @@ const RegulatorDashboard: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              {/* Status Indicator */}
+              <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 rounded-full border border-green-200">
+                <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-700 font-medium">Connected</span>
+              </div>
+              
+              {/* Dashboard Stats */}
               <div className="text-center">
                 <p className="text-xs text-gray-500">Total Members</p>
                 <p className="text-xl font-bold text-blue-600">{regulatorData.total_users.toLocaleString()}</p>
@@ -249,6 +269,25 @@ const RegulatorDashboard: React.FC = () => {
               <div className="text-center">
                 <p className="text-xs text-gray-500">Avg Portfolio</p>
                 <p className="text-lg font-bold text-green-600">£{(regulatorData.summary.avg_savings / 1000).toFixed(0)}k</p>
+              </div>
+
+              {/* User Details and Logout */}
+              <div className="flex items-center space-x-3">
+                <div className="text-right">
+                  <p className="text-sm font-medium text-gray-900">
+                    Welcome, {currentUser?.full_name || currentUser?.username || 'Regulator'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    ID: {currentUser?.id || 'N/A'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center space-x-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors duration-200"
+                >
+                  <Shield className="h-4 w-4" />
+                  <span className="text-sm font-medium">Logout</span>
+                </button>
               </div>
             </div>
           </div>
@@ -301,9 +340,9 @@ const RegulatorDashboard: React.FC = () => {
 
       {/* Compact Key Metrics */}
       <div className="px-4 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {/* Average Age Card */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-3">
               <div className="h-12 w-12 bg-blue-50 rounded-xl flex items-center justify-center">
                 <Users className="h-6 w-6 text-blue-600" />
@@ -319,7 +358,7 @@ const RegulatorDashboard: React.FC = () => {
           </div>
 
           {/* Average Income Card */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-3">
               <div className="h-12 w-12 bg-green-50 rounded-xl flex items-center justify-center">
                 <TrendingUp className="h-6 w-6 text-green-600" />
@@ -335,7 +374,7 @@ const RegulatorDashboard: React.FC = () => {
           </div>
               
           {/* Suspicious Transactions Card */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-3">
               <div className="h-12 w-12 bg-red-50 rounded-xl flex items-center justify-center">
                 <AlertTriangle className="h-6 w-6 text-red-600" />
@@ -351,7 +390,7 @@ const RegulatorDashboard: React.FC = () => {
           </div>
 
           {/* Average Savings Card */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-3">
               <div className="h-12 w-12 bg-purple-50 rounded-xl flex items-center justify-center">
                 <BarChart3 className="h-6 w-6 text-purple-600" />
@@ -367,15 +406,15 @@ const RegulatorDashboard: React.FC = () => {
           </div>
         </div>
             
-        {/* Compact Interactive Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* All 4 Charts in One View - 2x2 Grid - Fixed TypeScript errors */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           {/* Risk Distribution Chart */}
-          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center space-x-2 mb-3">
-              <BarChart3 className="h-5 w-5 text-blue-600" />
-              <h3 className="text-base font-semibold text-gray-900">Risk Distribution Analysis</h3>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center space-x-2 mb-2">
+              <BarChart3 className="h-4 w-4 text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-900">Risk Distribution</h3>
             </div>
-            <div className="h-64">
+            <div className="h-48">
               <Plot
                 data={[
                   {
@@ -391,28 +430,27 @@ const RegulatorDashboard: React.FC = () => {
                   }
                 ]}
                 layout={{
-                  title: { text: 'Risk Distribution Analysis' },
-                  xaxis: { title: 'Risk Level', showgrid: false },
-                  yaxis: { title: 'Number of Members', showgrid: true, gridcolor: '#e5e7eb' },
+                  xaxis: { title: '', showgrid: false },
+                  yaxis: { title: '', showgrid: true, gridcolor: '#e5e7eb' },
                   plot_bgcolor: 'rgba(0,0,0,0)',
                   paper_bgcolor: 'rgba(0,0,0,0)',
-                  margin: { t: 30, b: 50, l: 50, r: 30 },
+                  margin: { t: 20, b: 30, l: 40, r: 20 },
                   showlegend: false,
                   hovermode: 'closest'
                 }}
-                config={{ displayModeBar: true, displaylogo: false, modeBarButtonsToRemove: ['pan2d', 'lasso2d'] }}
+                config={{ displayModeBar: false, displaylogo: false }}
                 style={{ width: '100%', height: '100%' }}
               />
             </div>
           </div>
 
           {/* Fraud Risk Summary Chart */}
-          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center space-x-2 mb-3">
-              <PieChart className="h-5 w-5 text-green-600" />
-              <h3 className="text-base font-semibold text-gray-900">Fraud Risk Summary</h3>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center space-x-2 mb-2">
+              <PieChart className="h-4 w-4 text-green-600" />
+              <h3 className="text-sm font-semibold text-gray-900">Fraud Risk</h3>
             </div>
-            <div className="relative h-64 w-full">
+            <div className="relative h-48 w-full">
               <div className="absolute inset-0 flex items-center justify-center">
                 <Plot
                   data={[
@@ -432,7 +470,6 @@ const RegulatorDashboard: React.FC = () => {
                     }
                   ]}
                   layout={{
-                    title: { text: '' },
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     margin: { t: 0, b: 0, l: 0, r: 0 },
@@ -449,17 +486,14 @@ const RegulatorDashboard: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Compact Additional Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Age Group Analysis */}
-          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center space-x-2 mb-3">
-              <Users className="h-5 w-5 text-purple-600" />
-              <h3 className="text-base font-semibold text-gray-900">Age Group Analysis</h3>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center space-x-2 mb-2">
+              <Users className="h-4 w-4 text-purple-600" />
+              <h3 className="text-sm font-semibold text-gray-900">Age Analysis</h3>
             </div>
-            <div className="h-64">
+            <div className="h-48">
               <Plot
                 data={[
                   {
@@ -480,28 +514,28 @@ const RegulatorDashboard: React.FC = () => {
                   }
                 ]}
                 layout={{
-                  title: { text: 'Age Group Analysis' },
-                  xaxis: { title: 'Age Group' },
-                  yaxis: { title: 'Average Income (£k)', side: 'left' },
-                  yaxis2: { title: 'Average Savings (£k)', side: 'right', overlaying: 'y' },
+                  xaxis: { title: '', showgrid: false },
+                  yaxis: { title: '', side: 'left', showgrid: true, gridcolor: '#e5e7eb' },
+                  yaxis2: { title: '', side: 'right', overlaying: 'y', showgrid: false },
                   plot_bgcolor: 'rgba(0,0,0,0)',
                   paper_bgcolor: 'rgba(0,0,0,0)',
-                  margin: { t: 30, b: 50, l: 50, r: 50 },
-                  hovermode: 'closest'
+                  margin: { t: 20, b: 30, l: 40, r: 40 },
+                  hovermode: 'closest',
+                  showlegend: false
                 }}
-                config={{ displayModeBar: true, displaylogo: false, modeBarButtonsToRemove: ['pan2d', 'lasso2d'] }}
+                config={{ displayModeBar: false, displaylogo: false }}
                 style={{ width: '100%', height: '100%' }}
               />
             </div>
           </div>
 
           {/* Income Level Analysis */}
-          <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center space-x-2 mb-3">
-              <TrendingUp className="h-5 w-5 text-orange-600" />
-              <h3 className="text-base font-semibold text-gray-900">Income Level Analysis</h3>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+            <div className="flex items-center space-x-2 mb-2">
+              <TrendingUp className="h-4 w-4 text-orange-600" />
+              <h3 className="text-sm font-semibold text-gray-900">Income Analysis</h3>
             </div>
-            <div className="h-64">
+            <div className="h-48">
               <Plot
                 data={[
                   {
@@ -525,16 +559,16 @@ const RegulatorDashboard: React.FC = () => {
                   }
                 ]}
                 layout={{
-                  title: { text: 'Income Level Analysis' },
-                  xaxis: { title: 'Income Level' },
-                  yaxis: { title: 'Average Age' },
-                  yaxis2: { title: 'Average Savings (£k)', side: 'right', overlaying: 'y' },
+                  xaxis: { title: '', showgrid: false },
+                  yaxis: { title: '', showgrid: true, gridcolor: '#e5e7eb' },
+                  yaxis2: { title: '', side: 'right', overlaying: 'y', showgrid: false },
                   plot_bgcolor: 'rgba(0,0,0,0)',
                   paper_bgcolor: 'rgba(0,0,0,0)',
-                  margin: { t: 30, b: 50, l: 50, r: 50 },
-                  hovermode: 'closest'
+                  margin: { t: 20, b: 30, l: 40, r: 40 },
+                  hovermode: 'closest',
+                  showlegend: false
                 }}
-                config={{ displayModeBar: true, displaylogo: false, modeBarButtonsToRemove: ['pan2d', 'lasso2d'] }}
+                config={{ displayModeBar: false, displaylogo: false }}
                 style={{ width: '100%', height: '100%' }}
               />
             </div>
