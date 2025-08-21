@@ -10,7 +10,11 @@ import {
   ChartBarIcon 
 } from '@heroicons/react/24/outline';
 
-const PensionAILanding = () => {
+interface PensionAILandingProps {
+  onNavigate: (page: string) => void;
+}
+
+const PensionAILanding: React.FC<PensionAILandingProps> = ({ onNavigate }) => {
   const [isVisible, setIsVisible] = useState<Record<string, boolean>>({});
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [showContent, setShowContent] = useState(false);
@@ -125,9 +129,20 @@ const PensionAILanding = () => {
               Pension AI
             </span>
           </div>
-          <button className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-2 rounded-full hover:shadow-lg transform hover:scale-105 transition-all duration-300">
-            Get Started
-          </button>
+          <div className="flex items-center space-x-4">
+            <button 
+              onClick={() => onNavigate('login')}
+              className="text-gray-700 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 font-medium"
+            >
+              Login
+            </button>
+            <button 
+              onClick={() => onNavigate('signup')}
+              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-2 rounded-full hover:shadow-lg transform hover:scale-105 transition-all duration-300 font-medium"
+            >
+              Sign Up
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -153,7 +168,10 @@ const PensionAILanding = () => {
               </div>
 
               <div className={`flex flex-wrap gap-4 transform transition-all duration-1000 delay-500 ${showContent ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                <button className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-4 rounded-full hover:shadow-xl transform hover:scale-105 transition-all duration-300 flex items-center space-x-2">
+                <button 
+                  onClick={() => onNavigate('signup')}
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-4 rounded-full hover:shadow-xl transform hover:scale-105 transition-all duration-300 flex items-center space-x-2"
+                >
                   <span className="font-semibold">Start Analysis</span>
                   <ArrowRightIcon className="w-5 h-5" />
                 </button>
