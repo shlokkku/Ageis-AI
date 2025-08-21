@@ -12,7 +12,7 @@ Base.metadata.create_all(bind=engine)
 # ---------------------------
 # Excel file path (absolute or relative)
 # ---------------------------
-EXCEL_FILE = r"D:\Usecase 5.xlsx"
+EXCEL_FILE = r"C:\Users\marya\OneDrive\Desktop\pension_data.xlsx"
 
 def import_data():
     db: Session = SessionLocal()

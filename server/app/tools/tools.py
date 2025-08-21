@@ -282,9 +282,16 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
         employer_contribution = pension_data.employer_contribution or 0
         total_annual_contribution = annual_contribution + employer_contribution
         pension_type = pension_data.pension_type or "Defined Contribution"
-        annual_return_rate = pension_data.annual_return_rate or 0.08
+        # Normalize return rate to ensure it's in decimal format (e.g., 6.88% -> 0.0688)
+        raw_return_rate = pension_data.annual_return_rate or 0.08
+        if raw_return_rate > 1.0:  # If it's greater than 100%, convert from percentage
+            annual_return_rate = raw_return_rate / 100.0
+        else:
+            annual_return_rate = raw_return_rate
         
         print(f"🔍 Tool Debug - Pension Type: {pension_type}")
+        print(f"🔍 Tool Debug - Raw Return Rate: {raw_return_rate}")
+        print(f"🔍 Tool Debug - Normalized Return Rate: {annual_return_rate}")
         print(f"🔍 Tool Debug - Current Savings: {current_savings}")
         print(f"🔍 Tool Debug - Annual Income: {annual_income}")
         print(f"🔍 Tool Debug - Age: {age}")
@@ -346,14 +353,14 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
                 
                 if projected_balance > max_reasonable_projection:
                     projected_balance = max_reasonable_projection
-                    print(f"🔍 Tool Debug - Capped projection from ₹{projected_balance:,.0f} to ₹{max_reasonable_projection:,.0f}")
+                    print(f"🔍 Tool Debug - Capped projection from £{projected_balance:,.0f} to £{max_reasonable_projection:,.0f}")
                 
                 # Calculate scenarios with realistic limits
                 scenario_10_percent = min(projected_balance * 1.1, max_reasonable_projection * 1.1)
                 scenario_20_percent = min(projected_balance * 1.2, max_reasonable_projection * 1.2)
                 
-                print(f"🔍 Tool Debug - DC Calculation: FV Current=₹{fv_current:,.0f}, FV Contributions=₹{fv_contributions:,.0f}")
-                print(f"🔍 Tool Debug - Projected Balance: ₹{projected_balance:,.0f}")
+                print(f"🔍 Tool Debug - DC Calculation: FV Current=£{fv_current:,.0f}, FV Contributions=£{fv_contributions:,.0f}")
+                print(f"🔍 Tool Debug - Projected Balance: £{projected_balance:,.0f}")
                 
             else:
                 projected_balance = current_savings
@@ -366,7 +373,7 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
             projected_balance = pension_data.projected_pension_amount or (annual_income * 0.6)  # 60% of final salary
             scenario_10_percent = projected_balance
             scenario_20_percent = projected_balance
-            print(f"🔍 Tool Debug - DB Plan: Using projected amount ₹{projected_balance:,.0f}")
+            print(f"🔍 Tool Debug - DB Plan: Using projected amount £{projected_balance:,.0f}")
             
         else:
             # HYBRID or UNKNOWN: Use a conservative approach
@@ -387,7 +394,7 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
                 scenario_10_percent = current_savings
                 scenario_20_percent = current_savings
             
-            print(f"🔍 Tool Debug - Hybrid/Unknown: Conservative calculation ₹{projected_balance:,.0f}")
+            print(f"🔍 Tool Debug - Hybrid/Unknown: Conservative calculation £{projected_balance:,.0f}")
         
         # Validation and warnings
         validation_warnings = []
@@ -406,28 +413,121 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
             validation_warnings.append("Short-term projection seems high - consider more conservative estimates")
             calculation_notes.append("Short time periods typically show smaller growth")
         
+        # Generate chart data for visualizations
+        chart_data = {}
+        
+        # Chart 1: Pension Growth Over Time
+        if years_to_retirement > 0:
+            years_data = list(range(age, retirement_age_goal + 1))
+            projected_values = []
+            for year in years_data:
+                years_from_now = year - age
+                if years_from_now <= 0:
+                    projected_values.append(current_savings)
+                else:
+                    # Calculate projected value for this year
+                    fv_current = current_savings * (1 + annual_return_rate) ** years_from_now
+                    if total_annual_contribution > 0:
+                        fv_contributions = total_annual_contribution * ((1 + annual_return_rate) ** years_from_now - 1) / annual_return_rate
+                    else:
+                        fv_contributions = 0
+                    projected_values.append(min(fv_current + fv_contributions, current_savings * 20))  # Cap at 20x
+            
+            chart_data["pension_growth"] = {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Pension growth projection over time",
+                "data": {
+                    "values": [{"age": y, "projected_value": v} for y, v in zip(years_data, projected_values)]
+                },
+                "mark": "line",
+                "encoding": {
+                    "x": {
+                        "field": "age",
+                        "type": "quantitative",
+                        "title": "Age"
+                    },
+                    "y": {
+                        "field": "projected_value",
+                        "type": "quantitative",
+                        "title": "Projected Pension Value (£)"
+                    }
+                }
+            }
+        
+        # Chart 2: Progress to Goal
+        chart_data["progress_to_goal"] = {
+            "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+            "description": "Progress toward retirement goal",
+            "data": {
+                "values": [
+                    {"metric": "Current Savings", "value": current_savings},
+                    {"metric": "Goal Amount", "value": retirement_goal_amount}
+                ]
+            },
+            "mark": "bar",
+            "encoding": {
+                "x": {
+                    "field": "metric",
+                    "type": "nominal",
+                    "title": ""
+                },
+                "y": {
+                    "field": "value",
+                    "type": "quantitative",
+                    "title": "Amount (£)"
+                }
+            }
+        }
+        
+        # Chart 3: Savings Rate Analysis
+        chart_data["savings_analysis"] = {
+            "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+            "description": "Savings rate and contribution analysis",
+            "data": {
+                "values": [
+                    {"category": "Annual Income", "amount": annual_income},
+                    {"category": "Annual Contribution", "amount": total_annual_contribution},
+                    {"category": "Current Savings", "amount": current_savings}
+                ]
+            },
+            "mark": "bar",
+            "encoding": {
+                "x": {
+                    "field": "category",
+                    "type": "nominal",
+                    "title": ""
+                },
+                "y": {
+                    "field": "amount",
+                    "type": "quantitative",
+                    "title": "Amount (£)"
+                }
+            }
+        }
+        
         # Format the response
         response = {
             "current_data": {
-                "current_savings": f"₹{current_savings:,.0f}",
-                "annual_income": f"₹{annual_income:,.0f}",
+                "current_savings": f"£{current_savings:,.0f}",
+                "annual_income": f"£{annual_income:,.0f}",
                 "age": age,
                 "retirement_age_goal": retirement_age_goal,
-                "annual_contribution": f"₹{total_annual_contribution:,.0f}",
+                "annual_contribution": f"£{total_annual_contribution:,.0f}",
                 "savings_rate": f"{savings_rate_percentage:.1f}%",
                 "pension_type": pension_type
             },
             "projection_analysis": {
                 "years_to_retirement": years_to_retirement,
-                "projected_balance": f"₹{projected_balance:,.0f}",
-                "scenario_10_percent_increase": f"₹{scenario_10_percent:,.0f}",
-                "scenario_20_percent_increase": f"₹{scenario_20_percent:,.0f}",
+                "projected_balance": f"£{projected_balance:,.0f}",
+                "scenario_10_percent_increase": f"£{scenario_10_percent:,.0f}",
+                "scenario_20_percent_increase": f"£{scenario_20_percent:,.0f}",
                 "annual_return_rate": f"{annual_return_rate * 100:.1f}%",
                 "validation_warnings": validation_warnings,
                 "calculation_notes": calculation_notes
             },
             "status": status,
             "progress_to_goal": f"{progress_percentage:.1f}%",
+            "chart_data": chart_data,
             "data_source": "DATABASE_PENSION_DATA",
             "note": "This analysis is based on your pension data stored in our database, not from uploaded documents."
         }
@@ -1001,5 +1101,4 @@ all_pension_tools = [
     analyze_uploaded_document,
     query_knowledge_base
 ]
-
 
