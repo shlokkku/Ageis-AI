@@ -44,8 +44,7 @@ class RiskToolInput(BaseModel):
 @tool(args_schema=RiskToolInput)
 def analyze_risk_profile(user_id: int = None) -> Dict[str, Any]:
     """
-    Analyzes a user's risk profile based on their ID by fetching their data
-    and evaluating it against fixed financial risk factors.
+    Analyzes a user's risk profile using ML models first, with LLM fallback.
     Returns a structured JSON object with the complete risk assessment.
     """
     print(f"🔍 Tool Debug: analyze_risk_profile called with user_id={user_id}")
@@ -94,6 +93,41 @@ def analyze_risk_profile(user_id: int = None) -> Dict[str, Any]:
             "Portfolio_Diversity_Score": pension_data.portfolio_diversity_score,
             "Health_Status": pension_data.health_status
         }
+        
+        # 🔥 NEW: Try ML model first, fallback to LLM
+        try:
+            from ..ml_models import ml_service
+            print("🤖 Attempting ML model prediction for risk analysis...")
+            
+            # Use ML model for risk prediction
+            risk_result, ml_success = ml_service.predict_risk(user_data)
+            
+            if ml_success:
+                print("✅ ML model successfully predicted risk")
+                return {
+                    "success": True,
+                    "risk_analysis": risk_result,
+                    "user_data": user_data,
+                    "analysis_method": "ML Model + Fallback",
+                    "ml_model_used": True
+                }
+            else:
+                print("⚠️ ML model failed, using rule-based fallback")
+                return {
+                    "success": True,
+                    "risk_analysis": risk_result,
+                    "user_data": user_data,
+                    "analysis_method": "Rule-based Fallback",
+                    "ml_model_used": False
+                }
+                
+        except ImportError:
+            print("⚠️ ML models not available, using LLM fallback")
+        except Exception as e:
+            print(f"❌ ML model error: {e}, using LLM fallback")
+        
+        # 🔄 FALLBACK: Use LLM for risk analysis
+        print("🔄 Using LLM fallback for risk analysis")
         prompt = f"""
         **SYSTEM:** You are a Methodical Financial Risk Analyst System...
         **TASK:** Analyze the user's data below...
@@ -177,7 +211,14 @@ def detect_fraud(user_id: int = None) -> Dict[str, Any]:
         if not pension_data:
             return {"error": f"No pension data found for User ID: {final_user_id}"}
         
+        # Prepare user data for ML model (using available fields)
         user_data = {
+            "Annual_Income": pension_data.annual_income,
+            "Debt_Level": pension_data.debt_level,
+            "Risk_Tolerance": pension_data.risk_tolerance,
+            "Volatility": pension_data.volatility,
+            "Portfolio_Diversity_Score": pension_data.portfolio_diversity_score,
+            "Health_Status": pension_data.health_status,
             "Country": pension_data.country,
             "Transaction_Amount": pension_data.transaction_amount,
             "Suspicious_Flag": pension_data.suspicious_flag,
@@ -185,6 +226,44 @@ def detect_fraud(user_id: int = None) -> Dict[str, Any]:
             "Geo_Location": pension_data.geo_location
         }
         
+        # 🔥 NEW: Try ML model first, fallback to LLM
+        try:
+            from ..ml_models import ml_service
+            print("🤖 Attempting ML model prediction for fraud detection...")
+            
+            # Use ML model for fraud prediction
+            fraud_result, ml_success = ml_service.predict_fraud(user_data)
+            
+            if ml_success:
+                print("✅ ML model successfully predicted fraud risk")
+                return {
+                    "success": True,
+                    "fraud_analysis": fraud_result,
+                    "user_data": user_data,
+                    "analysis_method": "ML Model + Fallback",
+                    "ml_model_used": True,
+                    "data_source": "DATABASE_PENSION_DATA",
+                    "note": "This fraud detection analysis is based on your pension data stored in our database, not from uploaded documents."
+                }
+            else:
+                print("⚠️ ML model failed, using rule-based fallback")
+                return {
+                    "success": True,
+                    "fraud_analysis": fraud_result,
+                    "user_data": user_data,
+                    "analysis_method": "Rule-based Fallback",
+                    "ml_model_used": False,
+                    "data_source": "DATABASE_PENSION_DATA",
+                    "note": "This fraud detection analysis is based on your pension data stored in our database, not from uploaded documents."
+                }
+                
+        except ImportError:
+            print("⚠️ ML models not available, using LLM fallback")
+        except Exception as e:
+            print(f"❌ ML model error: {e}, using LLM fallback")
+        
+        # 🔄 FALLBACK: Use LLM for fraud detection
+        print("🔄 Using LLM fallback for fraud detection")
         prompt = f"""
         **SYSTEM:** You are a Financial Fraud Detection System...
         **TASK:** Analyze the user's transaction data below...
