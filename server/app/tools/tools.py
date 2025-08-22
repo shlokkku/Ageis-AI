@@ -1,3 +1,4 @@
+#tools.py
 import json
 from typing import Dict, Any, List, Optional
 
@@ -28,7 +29,7 @@ json_llm = ChatGoogleGenerativeAI(
 # --- Tool 1: Risk Analysis ---
 class RiskToolInput(BaseModel):
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
-    query: Optional[str] = Field(description="The user's original query for context")
+    query: Optional[str] = Field(description="The user's original query for context and role-based detection.")
 
     @validator("user_id", pre=True)
     def coerce_user_id(cls, value):
@@ -47,27 +48,43 @@ def analyze_risk_profile(user_id: int = None) -> Dict[str, Any]:
     and evaluating it against fixed financial risk factors.
     Returns a structured JSON object with the complete risk assessment.
     """
-    # PRIORITY 1: Get user_id from request context (most secure)
-    if user_id is None:
-        user_id = get_current_user_id_from_context()
-        if user_id:
-            print(f"🔍 Context: Using user_id={user_id} from request context")
+    print(f"🔍 Tool Debug: analyze_risk_profile called with user_id={user_id}")
     
-    # PRIORITY 2: Clean up the input if it's not a clean integer
-    if user_id is None or isinstance(user_id, str):
-        user_id = extract_user_id_from_input(user_id)
-        if user_id:
-            print(f"🔍 Input Cleanup: Extracted user_id={user_id} from input")
-    
-    if not user_id:
+    # PRIORITY 1: Get current user's ID from request context (most secure)
+    current_user_id = get_current_user_id_from_context()
+    if not current_user_id:
         return {"error": "User not authenticated. Please log in."}
     
-    print(f"\n--- TOOL: Running Risk Analysis for User ID: {user_id} ---")
+    # PRIORITY 2: Get target user_id from input (could be client ID for advisors)
+    target_user_id_input = None
+    if user_id is not None:
+        if isinstance(user_id, str):
+            target_user_id_input = extract_user_id_from_input(user_id)
+        else:
+            target_user_id_input = user_id
+    
+    print(f"\n--- TOOL: Running Risk Analysis ---")
+    print(f"🔍 Context: Current user ID: {current_user_id}")
+    print(f"🔍 Context: Target user ID from input: {target_user_id_input}")
+    
     db: Session = SessionLocal()
     try:
-        pension_data = db.query(models.PensionData).filter(models.PensionData.user_id == user_id).first()
+        # Apply role-based context detection using workflow context
+        original_query = get_current_query_from_context() or ""
+        target_user_id, context_type = detect_role_based_context(original_query, current_user_id, db)
+        if context_type == 'client':
+            print(f"🔍 Role Context: Accessing client data (ID: {target_user_id})")
+            final_user_id = target_user_id
+        elif context_type == 'self':
+            print(f"🔍 Role Context: Accessing own data (ID: {target_user_id})")
+            final_user_id = target_user_id
+        else:
+            print(f"🔍 Role Context: Unknown context, using current user ID: {current_user_id}")
+            final_user_id = current_user_id
+        
+        pension_data = db.query(models.PensionData).filter(models.PensionData.user_id == final_user_id).first()
         if not pension_data:
-            return {"error": f"No pension data found for User ID: {user_id}"}
+            return {"error": f"No pension data found for User ID: {final_user_id}"}
 
         user_data = {
             "Annual_Income": pension_data.annual_income,
@@ -106,7 +123,7 @@ def analyze_risk_profile(user_id: int = None) -> Dict[str, Any]:
 # --- Tool 2: Fraud Detection ---
 class FraudToolInput(BaseModel):
     user_id: Optional[int] = Field(description="The numeric database ID for the user. If not provided, will be retrieved from current session.")
-    query: Optional[str] = Field(description="The user's original query for context")
+    query: Optional[str] = Field(description="The user's original query for context and role-based detection.")
 
     @validator("user_id", pre=True)
     def coerce_user_id(cls, value):
@@ -124,27 +141,41 @@ def detect_fraud(user_id: int = None) -> Dict[str, Any]:
     Analyzes a user's recent transactions based on their ID to detect potential fraud.
     Evaluates data against fixed rules and returns a structured JSON assessment.
     """
-    # PRIORITY 1: Get user_id from request context (most secure)
-    if user_id is None:
-        user_id = get_current_user_id_from_context()
-        if user_id:
-            print(f"🔍 Context: Using user_id={user_id} from request context")
-    
-    # PRIORITY 2: Clean up the input if it's not a clean integer
-    if user_id is None or isinstance(user_id, str):
-        user_id = extract_user_id_from_input(user_id)
-        if user_id:
-            print(f"🔍 Input Cleanup: Extracted user_id={user_id} from input")
-    
-    if not user_id:
+    # PRIORITY 1: Get current user's ID from request context (most secure)
+    current_user_id = get_current_user_id_from_context()
+    if not current_user_id:
         return {"error": "User not authenticated. Please log in."}
     
-    print(f"\n--- TOOL: Running Fraud Detection for User ID: {user_id} ---")
+    # PRIORITY 2: Get target user_id from input (could be client ID for advisors)
+    target_user_id_input = None
+    if user_id is not None:
+        if isinstance(user_id, str):
+            target_user_id_input = extract_user_id_from_input(user_id)
+        else:
+            target_user_id_input = user_id
+    
+    print(f"\n--- TOOL: Running Fraud Detection ---")
+    print(f"🔍 Context: Current user ID: {current_user_id}")
+    print(f"🔍 Context: Target user ID from input: {target_user_id_input}")
+    
     db: Session = SessionLocal()
     try:
-        pension_data = db.query(models.PensionData).filter(models.PensionData.user_id == user_id).first()
+        # Apply role-based context detection using workflow context
+        original_query = get_current_query_from_context() or ""
+        target_user_id, context_type = detect_role_based_context(original_query, current_user_id, db)
+        if context_type == 'client':
+            print(f"🔍 Role Context: Accessing client data (ID: {target_user_id})")
+            final_user_id = target_user_id
+        elif context_type == 'self':
+            print(f"🔍 Role Context: Accessing own data (ID: {target_user_id})")
+            final_user_id = target_user_id
+        else:
+            print(f"🔍 Role Context: Unknown context, using current user ID: {current_user_id}")
+            final_user_id = current_user_id
+        
+        pension_data = db.query(models.PensionData).filter(models.PensionData.user_id == final_user_id).first()
         if not pension_data:
-            return {"error": f"No pension data found for User ID: {user_id}"}
+            return {"error": f"No pension data found for User ID: {final_user_id}"}
         
         user_data = {
             "Country": pension_data.country,
@@ -269,6 +300,18 @@ def project_pension(user_id: int = None, query: str = None) -> Dict[str, Any]:
     
     db: Session = SessionLocal()
     try:
+        # Apply role-based context detection using workflow context
+        original_query = get_current_query_from_context() or ""
+        target_user_id, context_type = detect_role_based_context(original_query, user_id, db)
+        if context_type == 'client':
+            print(f"🔍 Role Context: Accessing client data (ID: {target_user_id})")
+            user_id = target_user_id
+        elif context_type == 'self':
+            print(f"🔍 Role Context: Accessing own data (ID: {target_user_id})")
+            user_id = target_user_id
+        else:
+            print(f"🔍 Role Context: Unknown context, using original user_id: {user_id}")
+        
         pension_data = db.query(models.PensionData).filter(models.PensionData.user_id == user_id).first()
         if not pension_data:
             return {"error": f"No pension data found for User ID: {user_id}"}
@@ -582,6 +625,15 @@ def knowledge_base_search(query: str, user_id: int = None) -> Dict[str, Any]:
     all_results = []
     
     try:
+        # Get database session for role-based context
+        db: Session = SessionLocal()
+        # Apply role-based context detection
+        target_user_id, context_type = detect_role_based_context(query, user_id, db)
+        if context_type == 'client':
+            print(f"🔍 Role Context: Accessing client data (ID: {target_user_id})")
+            user_id = target_user_id
+        elif context_type == 'unknown':
+            print(f"🔍 Role Context: Unknown context, using original user_id: {user_id}")
         # SEARCH 1: General pension knowledge base
         print(f"🔍 Searching general pension knowledge base...")
         general_collection = get_or_create_collection("pension_knowledge")
@@ -733,6 +785,15 @@ def analyze_uploaded_document(query: str, user_id: int = None) -> Dict[str, Any]
     print(f"\n--- TOOL: Analyzing Uploaded Documents for User ID: {user_id} ---")
     
     try:
+        # Apply role-based context detection
+        db: Session = SessionLocal()
+        target_user_id, context_type = detect_role_based_context(query, user_id, db)
+        if context_type == 'client':
+            print(f"🔍 Role Context: Accessing client data (ID: {target_user_id})")
+            user_id = target_user_id
+        elif context_type == 'unknown':
+            print(f"🔍 Role Context: Unknown context, using original user_id: {user_id}")
+        
         # Search user's uploaded documents
         user_docs_collection = get_or_create_collection(f"user_{user_id}_docs")
         user_results = query_collection(user_docs_collection, [query], n_results=5)
@@ -879,6 +940,15 @@ def query_knowledge_base(query: str, user_id: int = None) -> Dict[str, Any]:
             print(f"🔍 Warning: Could not parse JSON input, using as-is")
     
     try:
+        # Apply role-based context detection
+        db: Session = SessionLocal()
+        target_user_id, context_type = detect_role_based_context(actual_query, user_id, db)
+        if context_type == 'client':
+            print(f"🔍 Role Context: Accessing client data (ID: {target_user_id})")
+            user_id = target_user_id
+        elif context_type == 'unknown':
+            print(f"🔍 Role Context: Unknown context, using original user_id: {user_id}")
+        
         # Get the user's document collection
         collection_name = f"user_{user_id}_docs"
         collection = get_or_create_collection(collection_name)
@@ -975,12 +1045,404 @@ def query_knowledge_base(query: str, user_id: int = None) -> Dict[str, Any]:
             "note": "An error occurred while searching your PDF documents."
         }
 
+# --- Tool 7: Regulator System Analysis (NEW) ---
+@tool
+def analyze_system_wide_risk() -> Dict[str, Any]:
+    """
+    Analyzes risk across ALL users in the system for regulatory oversight.
+    This tool is only available to regulators and provides system-wide risk assessment.
+    """
+    # Check if current user is a regulator
+    current_user_id = get_current_user_id_from_context()
+    if not current_user_id:
+        return {"error": "User not authenticated. Please log in."}
+    
+    db: Session = SessionLocal()
+    try:
+        # Verify user is a regulator
+        current_user = db.query(models.User).filter(models.User.id == current_user_id).first()
+        if not current_user or current_user.role != 'regulator':
+            return {"error": "This tool is only available to regulators"}
+        
+        print(f"🔍 Regulator Tool: Analyzing system-wide risk for regulator {current_user_id}")
+        
+        # Get all users with pension data
+        all_users = db.query(models.PensionData).all()
+        
+        if not all_users:
+            return {"error": "No pension data found in the system"}
+        
+        # Analyze risk distribution
+        risk_levels = {"Low": 0, "Medium": 0, "High": 0}
+        total_users = len(all_users)
+        total_age = 0
+        total_income = 0
+        total_savings = 0
+        high_risk_users = []
+        
+        for user_data in all_users:
+            # Calculate risk score (simplified version)
+            risk_score = 0
+            if user_data.volatility and user_data.volatility > 3.5:
+                risk_score += 1
+            if user_data.portfolio_diversity_score and user_data.portfolio_diversity_score < 0.5:
+                risk_score += 1
+            if user_data.debt_level and user_data.annual_income and user_data.debt_level > (user_data.annual_income * 0.5):
+                risk_score += 1
+            if user_data.health_status == 'Poor':
+                risk_score += 1
+            
+            # Categorize risk
+            if risk_score <= 1:
+                risk_level = "Low"
+            elif risk_score <= 2:
+                risk_level = "Medium"
+            else:
+                risk_level = "High"
+            
+            risk_levels[risk_level] += 1
+            
+            # Collect stats
+            if user_data.age:
+                total_age += user_data.age
+            if user_data.annual_income:
+                total_income += user_data.annual_income
+            if user_data.current_savings:
+                total_savings += user_data.current_savings
+            
+            # Track high-risk users
+            if risk_level == "High":
+                high_risk_users.append({
+                    "user_id": user_data.user_id,
+                    "risk_score": risk_score,
+                    "volatility": user_data.volatility,
+                    "diversity_score": user_data.portfolio_diversity_score,
+                    "debt_ratio": (user_data.debt_level / user_data.annual_income * 100) if user_data.debt_level and user_data.annual_income else 0
+                })
+        
+        # Calculate averages
+        avg_age = total_age / total_users if total_users > 0 else 0
+        avg_income = total_income / total_users if total_users > 0 else 0
+        avg_savings = total_savings / total_users if total_users > 0 else 0
+        
+        return {
+            "system_analysis": True,
+            "total_users": total_users,
+            "risk_distribution": risk_levels,
+            "high_risk_count": len(high_risk_users),
+            "high_risk_users": high_risk_users[:10],  # Top 10 high-risk users
+            "averages": {
+                "age": round(avg_age, 1),
+                "income": f"£{avg_income:,.0f}",
+                "savings": f"£{avg_savings:,.0f}"
+            },
+            "data_source": "SYSTEM_WIDE_ANALYSIS",
+            "note": "This analysis covers all users in the system for regulatory oversight."
+        }
+        
+    finally:
+        db.close()
+
+@tool
+def analyze_system_wide_fraud() -> Dict[str, Any]:
+    """
+    Analyzes fraud patterns across ALL users in the system for regulatory oversight.
+    This tool is only available to regulators and provides system-wide fraud detection.
+    """
+    # Check if current user is a regulator
+    current_user_id = get_current_user_id_from_context()
+    if not current_user_id:
+        return {"error": "User not authenticated. Please log in."}
+    
+    db: Session = SessionLocal()
+    try:
+        # Verify user is a regulator
+        current_user = db.query(models.User).filter(models.User.id == current_user_id).first()
+        if not current_user or current_user.role != 'regulator':
+            return {"error": "This tool is only available to regulators"}
+        
+        print(f"🔍 Regulator Tool: Analyzing system-wide fraud for regulator {current_user_id}")
+        
+        # Get all users with pension data
+        all_users = db.query(models.PensionData).all()
+        
+        if not all_users:
+            return {"error": "No pension data found in the system"}
+        
+        # Analyze fraud patterns
+        suspicious_transactions = 0
+        high_anomaly_users = 0
+        geographic_anomalies = 0
+        fraud_risk_summary = {"high": 0, "medium": 0, "low": 0}
+        
+        for user_data in all_users:
+            # Check suspicious flags
+            if user_data.suspicious_flag:
+                suspicious_transactions += 1
+            
+            # Check anomaly scores
+            if user_data.anomaly_score and user_data.anomaly_score > 0.8:
+                high_anomaly_users += 1
+            
+            # Categorize fraud risk
+            risk_score = 0
+            if user_data.suspicious_flag:
+                risk_score += 2
+            if user_data.anomaly_score and user_data.anomaly_score > 0.8:
+                risk_score += 2
+            elif user_data.anomaly_score and user_data.anomaly_score > 0.5:
+                risk_score += 1
+            
+            if risk_score >= 3:
+                fraud_risk_summary["high"] += 1
+            elif risk_score >= 1:
+                fraud_risk_summary["medium"] += 1
+            else:
+                fraud_risk_summary["low"] += 1
+        
+        return {
+            "system_analysis": True,
+            "total_users": len(all_users),
+            "fraud_risk_summary": fraud_risk_summary,
+            "suspicious_transactions": suspicious_transactions,
+            "high_anomaly_users": high_anomaly_users,
+            "data_source": "SYSTEM_WIDE_FRAUD_ANALYSIS",
+            "note": "This fraud analysis covers all users in the system for regulatory oversight."
+        }
+        
+    finally:
+        db.close()
+
+@tool
+def analyze_geographic_risk() -> Dict[str, Any]:
+    """
+    Analyzes geographic risk patterns across ALL users in the system for regulatory oversight.
+    This tool is only available to regulators and provides system-wide geographic analysis.
+    """
+    # Check if current user is a regulator
+    current_user_id = get_current_user_id_from_context()
+    if not current_user_id:
+        return {"error": "User not authenticated. Please log in."}
+    
+    db: Session = SessionLocal()
+    try:
+        # Verify user is a regulator
+        current_user = db.query(models.User).filter(models.User.id == current_user_id).first()
+        if not current_user or current_user.role != 'regulator':
+            return {"error": "This tool is only available to regulators"}
+        
+        print(f"🔍 Regulator Tool: Analyzing geographic risk for regulator {current_user_id}")
+        
+        # Get all users with pension data
+        all_users = db.query(models.PensionData).all()
+        
+        if not all_users:
+            return {"error": "No pension data found in the system"}
+        
+        # Define geographic risk factors for different countries
+        country_risk_factors = {
+            "UK": {"currency_stability": "High", "regulatory_stability": "High", "economic_risk": "Low"},
+            "USA": {"currency_stability": "High", "regulatory_stability": "Medium", "economic_risk": "Low"},
+            "Canada": {"currency_stability": "High", "regulatory_stability": "High", "economic_risk": "Low"},
+            "Australia": {"currency_stability": "Medium", "regulatory_stability": "High", "economic_risk": "Low"},
+            "Germany": {"currency_stability": "High", "regulatory_stability": "High", "economic_risk": "Low"},
+        }
+        
+        # Analyze geographic patterns
+        countries = {}
+        geographic_anomalies = 0
+        suspicious_locations = 0
+        cross_border_transactions = 0
+        
+        for user_data in all_users:
+            country = user_data.country or "Unknown"
+            if country not in countries:
+                risk_info = country_risk_factors.get(country, {
+                    "currency_stability": "Unknown", 
+                    "regulatory_stability": "Unknown", 
+                    "economic_risk": "Unknown"
+                })
+                countries[country] = {
+                    "count": 0,
+                    "total_income": 0,
+                    "total_savings": 0,
+                    "avg_risk_score": 0,
+                    "high_value_accounts": 0,
+                    "currency_stability": risk_info["currency_stability"],
+                    "regulatory_stability": risk_info["regulatory_stability"],
+                    "economic_risk": risk_info["economic_risk"]
+                }
+            
+            countries[country]["count"] += 1
+            if user_data.annual_income:
+                countries[country]["total_income"] += user_data.annual_income
+            if user_data.current_savings:
+                countries[country]["total_savings"] += user_data.current_savings
+            
+            # Check for high-value accounts (potential geographic concentration risk)
+            if user_data.current_savings and user_data.current_savings > 500000:  # £500k+
+                countries[country]["high_value_accounts"] += 1
+            
+            # Check for geographic anomalies (more realistic)
+            if user_data.ip_address and user_data.country:
+                # Simulate IP geolocation check (in real system, you'd use IP geolocation service)
+                # For now, flag if transaction patterns are unusual
+                if user_data.transaction_pattern_score and user_data.transaction_pattern_score > 0.8:
+                    suspicious_locations += 1
+            
+            # Check for potential cross-border transaction risks
+            if user_data.transaction_channel and "international" in user_data.transaction_channel.lower():
+                cross_border_transactions += 1
+        
+        # Calculate averages and risk scores for each country
+        total_assets_by_country = {}
+        for country, data in countries.items():
+            if data["count"] > 0:
+                data["avg_income"] = data["total_income"] / data["count"]
+                data["avg_savings"] = data["total_savings"] / data["count"]
+                
+                # Calculate geographic concentration risk
+                total_country_assets = data["total_savings"]
+                total_assets_by_country[country] = total_country_assets
+                
+                # Assess country-specific risk level
+                risk_score = 0
+                if data["currency_stability"] == "Low":
+                    risk_score += 2
+                elif data["currency_stability"] == "Medium":
+                    risk_score += 1
+                
+                if data["regulatory_stability"] == "Low":
+                    risk_score += 2
+                elif data["regulatory_stability"] == "Medium":
+                    risk_score += 1
+                
+                if data["economic_risk"] == "High":
+                    risk_score += 2
+                elif data["economic_risk"] == "Medium":
+                    risk_score += 1
+                
+                # Concentration risk (if one country has >40% of total assets)
+                data["risk_level"] = "Low" if risk_score <= 1 else "Medium" if risk_score <= 3 else "High"
+        
+        # Calculate total assets across all countries for concentration analysis
+        total_system_assets = sum(total_assets_by_country.values())
+        geographic_concentration_risks = []
+        
+        for country, assets in total_assets_by_country.items():
+            if total_system_assets > 0:
+                concentration_percentage = (assets / total_system_assets) * 100
+                if concentration_percentage > 40:  # More than 40% in one country
+                    geographic_concentration_risks.append({
+                        "country": country,
+                        "concentration_percentage": round(concentration_percentage, 2),
+                        "risk_level": "High"
+                    })
+                elif concentration_percentage > 25:  # More than 25% in one country
+                    geographic_concentration_risks.append({
+                        "country": country,
+                        "concentration_percentage": round(concentration_percentage, 2),
+                        "risk_level": "Medium"
+                    })
+        
+        return {
+            "system_analysis": True,
+            "total_users": len(all_users),
+            "countries": countries,
+            "geographic_risk_summary": {
+                "suspicious_locations": suspicious_locations,
+                "cross_border_transactions": cross_border_transactions,
+                "concentration_risks": geographic_concentration_risks,
+                "total_system_assets": f"£{total_system_assets:,.0f}"
+            },
+            "key_findings": [
+                f"Analyzed {len(all_users)} users across {len(countries)} countries",
+                f"Identified {len(geographic_concentration_risks)} countries with high asset concentration",
+                f"Found {suspicious_locations} accounts with suspicious location patterns",
+                f"Detected {cross_border_transactions} potential cross-border transaction risks"
+            ],
+            "data_source": "SYSTEM_WIDE_GEOGRAPHIC_ANALYSIS",
+            "note": "This analysis evaluates geographic distribution, concentration risks, and location-based anomalies for regulatory oversight."
+        }
+        
+    finally:
+        db.close()
+
+@tool
+def analyze_portfolio_trends() -> Dict[str, Any]:
+    """
+    Analyzes portfolio performance trends across ALL users in the system for regulatory oversight.
+    This tool is only available to regulators and provides system-wide portfolio analysis.
+    """
+    # Check if current user is a regulator
+    current_user_id = get_current_user_id_from_context()
+    if not current_user_id:
+        return {"error": "User not authenticated. Please log in."}
+    
+    db: Session = SessionLocal()
+    try:
+        # Verify user is a regulator
+        current_user = db.query(models.User).filter(models.User.id == current_user_id).first()
+        if not current_user or current_user.role != 'regulator':
+            return {"error": "This tool is only available to regulators"}
+        
+        print(f"🔍 Regulator Tool: Analyzing portfolio trends for regulator {current_user_id}")
+        
+        # Get all users with pension data
+        all_users = db.query(models.PensionData).all()
+        
+        if not all_users:
+            return {"error": "No pension data found in the system"}
+        
+        # Analyze portfolio trends
+        portfolio_types = {}
+        return_rates = []
+        diversity_scores = []
+        
+        for user_data in all_users:
+            # Portfolio type analysis
+            p_type = user_data.pension_type or "Unknown"
+            if p_type not in portfolio_types:
+                portfolio_types[p_type] = 0
+            portfolio_types[p_type] += 1
+            
+            # Return rate analysis
+            if user_data.annual_return_rate:
+                return_rates.append(user_data.annual_return_rate)
+            
+            # Diversity analysis
+            if user_data.portfolio_diversity_score:
+                diversity_scores.append(user_data.portfolio_diversity_score)
+        
+        # Calculate statistics
+        avg_return_rate = sum(return_rates) / len(return_rates) if return_rates else 0
+        avg_diversity = sum(diversity_scores) / len(diversity_scores) if diversity_scores else 0
+        
+        return {
+            "system_analysis": True,
+            "total_users": len(all_users),
+            "portfolio_types": portfolio_types,
+            "performance_metrics": {
+                "avg_return_rate": f"{avg_return_rate:.2%}",
+                "avg_diversity_score": round(avg_diversity, 3),
+                "total_return_rates_analyzed": len(return_rates),
+                "total_diversity_scores_analyzed": len(diversity_scores)
+            },
+            "data_source": "SYSTEM_WIDE_PORTFOLIO_ANALYSIS",
+            "note": "This portfolio analysis covers all users in the system for regulatory oversight."
+        }
+        
+    finally:
+        db.close()
+
 # Global context variable for user_id (shared across the module)
 import contextvars
 _user_id_context = contextvars.ContextVar('user_id', default=None)
+_query_context = contextvars.ContextVar('query', default=None)
 
 # Fallback global variable for when context doesn't work
 _current_user_id = None
+_current_query = None
 
 # Helper function to get user_id from context
 def get_current_user_id_from_context() -> Optional[int]:
@@ -1020,6 +1482,42 @@ def get_current_user_id_from_context() -> Optional[int]:
         print(f"Error getting user_id from context: {e}")
         return None
 
+def get_current_query_from_context() -> Optional[str]:
+    """
+    Get the current query from request context.
+    """
+    try:
+        print(f"🔍 Context Debug: Attempting to get query from context...")
+        
+        # Option 1: Request-scoped context
+        current_query = _query_context.get()
+        print(f"🔍 Context Debug: Request context query: {current_query}")
+        
+        if current_query is not None:
+            print(f"🔍 Context: Retrieved query='{current_query}' from request context")
+            return current_query
+        
+        # Option 2: Global fallback variable
+        if _current_query is not None:
+            print(f"🔍 Context: Retrieved query='{current_query}' from global fallback")
+            return _current_query
+        
+        # Option 3: Thread-local storage (fallback for testing)
+        import threading
+        query = getattr(threading.current_thread(), 'current_query', None)
+        print(f"🔍 Context Debug: Thread context query: {query}")
+        
+        if query is not None:
+            print(f"🔍 Context: Retrieved query='{query}' from thread context (testing)")
+            return query
+        
+        print(f"🔍 Context: No query found in context")
+        return None
+        
+    except Exception as e:
+        print(f"Error getting query from context: {e}")
+        return None
+
 def set_request_user_id(user_id: int):
     """
     Set the current user_id for the current request context.
@@ -1035,16 +1533,33 @@ def set_request_user_id(user_id: int):
         # Fallback to thread-local for testing
         set_current_user_id(user_id)
 
+def set_request_query(query: str):
+    """
+    Set the current query for the current request context.
+    """
+    try:
+        global _current_query
+        _current_query = query  # Set global fallback
+        _query_context.set(query)
+        print(f"🔍 Context: Set query='{query}' in request context and global fallback")
+    except Exception as e:
+        print(f"Error setting query in request context: {e}")
+        # Fallback to thread-local for testing
+        import threading
+        threading.current_thread().current_query = query
+
 def clear_request_user_id():
     """
     Clear the current user_id from the request context.
     This should be called at the end of each request.
     """
     try:
-        global _current_user_id
+        global _current_user_id, _current_query
         _current_user_id = None  # Clear global fallback
+        _current_query = None  # Clear query fallback
         _user_id_context.set(None)
-        print(f"🔍 Context: Cleared user_id from request context and global fallback")
+        _query_context.set(None)
+        print(f"🔍 Context: Cleared user_id and query from request context and global fallback")
     except Exception as e:
         print(f"Error clearing user_id from request context: {e}")
         # Fallback to thread-local for testing
@@ -1092,13 +1607,106 @@ def clear_current_user_id():
     if hasattr(threading.current_thread(), 'user_id'):
         delattr(threading.current_thread(), 'user_id')
 
-# Export all tools
+def detect_role_based_context(original_query: str, current_user_id: int, db: Session) -> tuple[int, str]:
+    """
+    Detect the role-based context for a query.
+    Returns (target_user_id, context_type) where context_type is:
+    - 'self': User is asking about their own data
+    - 'client': User is asking about a client's data (for advisors)
+    - 'any': User can access any data (for regulators)
+    - 'unknown': Unknown context, use current user's data
+    """
+    print(f"🔍 Role Context Detection: Query='{original_query}', Current User ID={current_user_id}")
+    
+    # Get current user's role
+    current_user = db.query(models.User).filter(models.User.id == current_user_id).first()
+    if not current_user:
+        print(f"🔍 Role Context: Current user {current_user_id} not found in database")
+        return current_user_id, 'unknown'
+    
+    current_role = current_user.role
+    print(f"🔍 Role Context: Current user role is '{current_role}'")
+    
+    # Extract user ID from query if present
+    detected_user_id = None
+    if original_query:
+        # Look for patterns like "user id X", "user X", "client X", etc.
+        import re
+        
+        # More specific patterns first to avoid false matches
+        patterns = [
+            r'user\s+id\s+(\d+)',      # "user id 1"
+            r'for\s+user\s+id\s+(\d+)', # "for user id 1"
+            r'user\s+(\d+)',            # "user 1"
+            r'client\s+(\d+)',          # "client 1"
+            r'for\s+user\s+(\d+)',      # "for user 1"
+            r'(\d+)'                    # fallback: any number
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, original_query.lower())
+            if match:
+                detected_user_id = int(match.group(1))
+                print(f"🔍 Role Context: Detected user ID {detected_user_id} from query '{original_query}'")
+                break
+        
+        # Additional validation: if we found a number, make sure it's not the current user's ID
+        if detected_user_id == current_user_id:
+            print(f"🔍 Role Context: Detected ID {detected_user_id} matches current user - treating as self query")
+            detected_user_id = None
+    
+    # Apply role-based logic
+    if current_role == 'resident':
+        # Residents can only access their own data
+        print(f"🔍 Role Context: Resident role - using own user ID {current_user_id}")
+        return current_user_id, 'self'
+    
+    elif current_role == 'advisor':
+        if detected_user_id and detected_user_id != current_user_id:
+            # Check if the detected user is a client of this advisor
+            client_relationship = db.query(models.AdvisorClient).filter(
+                models.AdvisorClient.advisor_id == current_user_id,
+                models.AdvisorClient.resident_id == detected_user_id
+            ).first()
+            
+            if client_relationship:
+                print(f"🔍 Role Context: Advisor accessing client data (ID: {detected_user_id})")
+                return detected_user_id, 'client'
+            else:
+                print(f"🔍 Role Context: Advisor cannot access user {detected_user_id} - not a client")
+                return current_user_id, 'self'
+        else:
+            # No specific user mentioned or asking about self
+            print(f"🔍 Role Context: Advisor using own user ID {current_user_id}")
+            return current_user_id, 'self'
+    
+    elif current_role == 'regulator':
+        if detected_user_id:
+            # Regulators can access any user's data
+            print(f"🔍 Role Context: Regulator accessing user data (ID: {detected_user_id})")
+            return detected_user_id, 'client'
+        else:
+            # No specific user mentioned - use current user (regulator)
+            print(f"🔍 Role Context: Regulator using own user ID {current_user_id}")
+            return current_user_id, 'self'
+    
+    else:
+        # Unknown role - use current user's data
+        print(f"🔍 Role Context: Unknown role '{current_role}' - using current user ID {current_user_id}")
+        return current_user_id, 'unknown'
+
+# Export all tools including the new regulator tools
 all_pension_tools = [
     analyze_risk_profile,
     detect_fraud,
     project_pension,
     knowledge_base_search,
     analyze_uploaded_document,
-    query_knowledge_base
+    query_knowledge_base,
+    # New regulator tools
+    analyze_system_wide_risk,
+    analyze_system_wide_fraud,
+    analyze_geographic_risk,
+    analyze_portfolio_trends
 ]
 
