@@ -132,6 +132,7 @@ const PensionAILanding: React.FC<PensionAILandingProps> = ({ onNavigate }) => {
             </span>
           </div>
           <div className="flex items-center space-x-4">
+
             {tokenManager.isAuthenticated() ? (
               <button 
                 onClick={() => {
@@ -159,6 +160,7 @@ const PensionAILanding: React.FC<PensionAILandingProps> = ({ onNavigate }) => {
                 </button>
               </>
             )}
+
           </div>
         </div>
       </nav>

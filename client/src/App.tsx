@@ -32,9 +32,9 @@ function App() {
       // Only redirect to dashboard if user explicitly navigates there
       // Don't auto-redirect on app load - always start with landing page
       // if (authenticated && user) {
-      //   setCurrentPage(user.role === 'resident' ? 'resident' : 
-      //                user.role === 'advisor' ? 'advisor' : 
-      //                user.role === 'regulator' ? 'regulator' : 'resident');
+      //    setCurrentPage(user.role === 'resident' ? 'resident' : 
+      //           user.role === 'advisor' ? 'advisor' : 
+      //           user.role === 'regulator' ? 'regulator' : 'resident');
       // }
     };
 
@@ -48,8 +48,8 @@ function App() {
     
     // Redirect to appropriate dashboard based on role
     const targetPage = userData.role === 'resident' ? 'resident' : 
-                      userData.role === 'advisor' ? 'advisor' : 
-                      userData.role === 'regulator' ? 'regulator' : 'resident';
+                       userData.role === 'advisor' ? 'advisor' : 
+                       userData.role === 'regulator' ? 'regulator' : 'resident';
     setCurrentPage(targetPage);
   };
 

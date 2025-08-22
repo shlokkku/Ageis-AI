@@ -284,6 +284,7 @@ const ResidentDashboard: React.FC = () => {
                       <p className="text-sm leading-relaxed">{message.content}</p>
                        
                       {/* Enhanced Chart Display */}
+
                       {(() => {
                         console.log('Rendering charts with data:', message.chartData);
                         return null;
@@ -293,6 +294,7 @@ const ResidentDashboard: React.FC = () => {
                           {Object.entries(message.chartData).map(([chartKey, chartConfig]: [string, any]) => {
                             console.log(`Rendering chart ${chartKey}:`, chartConfig);
                             return (
+    
                             <div key={chartKey} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                               <div className="flex items-center space-x-2 mb-3">
                                 <ChartBarIcon className="h-5 w-5 text-blue-500" />
