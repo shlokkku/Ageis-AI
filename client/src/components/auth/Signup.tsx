@@ -61,16 +61,12 @@ const Signup: React.FC = () => {
     setError(null);
     
     try {
-      // Mock signup for demo - in real app this would call the API
       console.log('Signup attempt:', formData);
       
-      // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // For demo, just show success message
       alert(`Account created successfully! (Demo mode)\nRole: ${formData.role}\nName: ${formData.full_name}`);
       
-      // Reset form
       setFormData({
         full_name: '',
         email: '',
