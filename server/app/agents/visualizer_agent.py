@@ -3,16 +3,15 @@ from langchain_core.messages import AIMessage
 import base64
 
 try:
-    from vl_convert import vegalite_to_png  # type: ignore
-except Exception:  # pragma: no cover
-    vegalite_to_png = None  # type: ignore
-
+    from vl_convert import vegalite_to_png  
+except Exception: 
+    vegalite_to_png = None 
 
 def _spec_to_png_data_uri(spec: Dict[str, Any]):
     try:
         if vegalite_to_png is None:
             return None
-        png_bytes = vegalite_to_png(spec)  # type: ignore
+        png_bytes = vegalite_to_png(spec)  
         b64 = base64.b64encode(png_bytes).decode("ascii")
         return f"data:image/png;base64,{b64}"
     except Exception:
@@ -54,43 +53,35 @@ def create_visualizer_node():
                 print(f"⚠ Visualizer: Error processing step: {e}")
                 continue
 
-        # Only create charts if the user requested them
         user_query = ""
         if state.get("messages") and len(state.get("messages", [])) > 0:
-            # Get the user's original query from the first message
             first_message = state["messages"][0]
             if hasattr(first_message, 'content'):
                 user_query = first_message.content.lower()
         
-        # Check if supervisor detected chart request OR if user explicitly wants charts
         supervisor_wants_charts = state.get("wants_charts", False)
         user_wants_charts = any(word in user_query for word in ["graph", "chart", "visual", "show me", "display"]) or supervisor_wants_charts
         
         if not user_wants_charts:
             print(f"🔍 Visualizer: User did not request charts, skipping visualization")
-            # Just add a simple confirmation message
-            messages = list(state["messages"])  # type: ignore
+            messages = list(state["messages"]) 
             messages.append(AIMessage(content="Your pension analysis is complete."))
             return {"messages": messages}
         
         print(f"🔍 Visualizer: User requested charts, creating visualizations")
         print(f"🔍 Visualizer: Supervisor wants_charts flag: {supervisor_wants_charts}")
-        
-        # Create charts only when requested
+
         charts = {}
         plotly_figs = {}
         chart_images = {}
 
-        # Projection line (start vs end)
         try:
             if isinstance(projection_data, dict):
-                # Check for the ACTUAL structure returned by project_pension tool
                 if "current_data" in projection_data and "projection_analysis" in projection_data:
                     current_data = projection_data.get("current_data", {})
                     projection_analysis = projection_data.get("projection_analysis", {})
                     chart_data = projection_data.get("chart_data", {})
                     
-                    # Extract values from current data
                     current_savings_str = current_data.get("current_savings", "£0")
                     annual_income_str = current_data.get("annual_income", "£0")
                     age = current_data.get("age", 0)
@@ -98,7 +89,6 @@ def create_visualizer_node():
                     annual_contribution_str = current_data.get("annual_contribution", "£0")
                     savings_rate_str = current_data.get("savings_rate", "0%")
                     
-                    # Extract values from projection analysis
                     years_to_retirement = projection_analysis.get("years_to_retirement", 0)
                     projected_balance_str = projection_analysis.get("projected_balance", "£0")
                     progress_to_goal_str = projection_data.get("progress_to_goal", "0%")
@@ -121,10 +111,7 @@ def create_visualizer_node():
                     
                     print(f"🔍 Visualizer: Current savings: {current_savings}, Annual income: {annual_income}")
                     print(f"🔍 Visualizer: Progress percentage: {progress_percentage}")
-                    
-                    # Create ONLY the 3 charts you want:
-                    
-                    # 1. Progress to Goal (Bar chart - NOT gauge)
+
                     charts["progress_to_goal"] = {
                         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
                         "description": "Progress to Goal",
@@ -132,7 +119,7 @@ def create_visualizer_node():
                             {"category": "Current Progress", "amount": progress_percentage},
                             {"category": "Remaining Goal", "amount": 100 - progress_percentage}
                         ]},
-                        "mark": "bar",  # Changed from {"type": "bar", "stack": "zero"}
+                        "mark": "bar", 
                         "encoding": {
                             "x": {"field": "category", "type": "nominal", "title": ""},
                             "y": {"field": "amount", "type": "quantitative", "title": "Percentage (%)"},
@@ -142,14 +129,12 @@ def create_visualizer_node():
                     
                     print(f"🔍 Visualizer: Created progress_to_goal chart with data: {charts['progress_to_goal']['data']}")
                     
-                    # 2. Pension Growth (Smooth line chart - NO nodes/dots and NO dips)
-                    # Create CORRECTED pension growth chart using actual projection data
                     print(f"🔍 Visualizer: Creating corrected pension growth chart")
                     
-                    # Get the actual projected balance from the projection tool result
+      
                     projected_balance = extract_number(projected_balance_str)
                     years_to_retirement = projection_analysis.get("years_to_retirement", 32)
-                    annual_return_rate = 0.091  # 9.1% from the data
+                    annual_return_rate = 0.091  
                     annual_contribution = extract_number(annual_contribution_str)
                     
                     print(f"🔍 Visualizer: Using actual projected balance: £{projected_balance:,.0f}")
@@ -157,8 +142,7 @@ def create_visualizer_node():
                     print(f"🔍 Visualizer: Annual return rate: {annual_return_rate:.1%}")
                     print(f"🔍 Visualizer: Annual contribution: £{annual_contribution:,.0f}")
                     
-                    # Generate corrected data points using the SAME formula as projection tool
-                    # This should match exactly: FV = FV(current_savings) + FV(annual_contributions)
+
                     pension_growth_data = []
                     for year in range(years_to_retirement + 1):
                         current_age = age + year  # Start from current age
@@ -166,18 +150,15 @@ def create_visualizer_node():
                         if year == 0:
                             value = current_savings
                         else:
-                            # Use the EXACT same calculation as projection tool:
-                            # 1. Future value of current savings: FV = PV * (1 + r)^n
-                            fv_current_savings = current_savings * ((1 + annual_return_rate) ** year)
                             
-                            # 2. Future value of annual contributions: FV = PMT * ((1 + r)^n - 1) / r
-                            # Where PMT = annual contribution, r = annual return rate, n = years
+                            fv_current_savings = current_savings * ((1 + annual_return_rate) ** year)
+
                             if annual_return_rate > 0:
                                    fv_contributions = annual_contribution * ((((1 + annual_return_rate) ** year) - 1) / annual_return_rate)
                             else:
                                 fv_contributions = annual_contribution * year
                             
-                            # 3. Total = both combined
+
                             value = fv_current_savings + fv_contributions
                         
                         pension_growth_data.append({
@@ -189,7 +170,7 @@ def create_visualizer_node():
                         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
                         "description": "Pension Growth Over Time (Corrected)",
                         "data": {"values": pension_growth_data},
-                        "mark": "line",  # NO point markers
+                        "mark": "line",  
                         "encoding": {
                             "x": {"field": "age", "type": "quantitative", "title": "Age"},
                             "y": {"field": "projected_value", "type": "quantitative", "title": "Projected Pension Value (£)"}
@@ -198,8 +179,7 @@ def create_visualizer_node():
                     
                     print(f"🔍 Visualizer: Created corrected pension growth with {len(pension_growth_data)} data points")
                     print(f"🔍 Visualizer: Final value at age {age + years_to_retirement}: £{pension_growth_data[-1]['projected_value']:,.0f}")
-                    
-                    # Verify the final value matches the projection tool
+                   
                     expected_final = projected_balance
                     actual_final = pension_growth_data[-1]['projected_value']
                     if abs(expected_final - actual_final) > 1000:  # Allow small rounding differences
@@ -208,7 +188,7 @@ def create_visualizer_node():
                     else:
                         print(f"✅ Visualizer: Chart final value matches projection tool: £{actual_final:,.0f}")
                     
-                    # 3. Savings Analysis (ONLY 2 bars: current savings and annual income)
+
                     charts["savings_analysis"] = {
                         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
                         "description": "Current Savings vs Annual Income",
@@ -216,7 +196,7 @@ def create_visualizer_node():
                             {"category": "Current Savings", "amount": current_savings},
                             {"category": "Annual Income", "amount": annual_income}
                         ]},
-                        "mark": "bar",  # Changed from {"type": "bar"}
+                        "mark": "bar", 
                         "encoding": {
                             "x": {"field": "category", "type": "nominal", "title": ""},
                             "y": {"field": "amount", "type": "quantitative", "title": "Amount (£)"},
@@ -226,8 +206,7 @@ def create_visualizer_node():
                     
                     print(f"🔍 Visualizer: Created savings_analysis chart with data: {charts['savings_analysis']['data']}")
                     
-                    # IMPORTANT: Don't use the old chart_data - it has wrong calculations!
-                    # We've already created the corrected pension_growth chart above
+
                     print(f"🔍 Visualizer: Ignoring old chart_data with incorrect calculations")
                         
         except Exception as e:
@@ -284,7 +263,7 @@ def create_visualizer_node():
         except Exception:
             pass
 
-        # Export images (best effort)
+
         for name, spec in charts.items():
             try:
                 uri = _spec_to_png_data_uri(spec)
@@ -294,16 +273,14 @@ def create_visualizer_node():
                 print(f"⚠ Error generating image for chart {name}: {e}")
                 continue
 
-        # Build Plotly figure JSONs for frontend rendering
         try:
-            # 1. Progress to Goal (Bar chart - NOT gauge)
             progress_to_goal = charts.get("progress_to_goal")
             if progress_to_goal and isinstance(progress_to_goal, dict):
                 values = progress_to_goal.get("data", {}).get("values", [])
                 categories = [v.get("category") for v in values]
                 amounts = [v.get("amount") for v in values]
                 if categories and amounts:
-                    # Create with multiple names to ensure frontend compatibility
+
                     plotly_figs["progress_to_goal"] = {
                         "data": [
                             {
@@ -336,11 +313,9 @@ def create_visualizer_node():
                             ]
                         }
                     }
-                    # Also create with alternative name
                     plotly_figs["progress_to_goal_chart"] = plotly_figs["progress_to_goal"]
                     print(f"🔍 Plotly: Created progress_to_goal bar chart with {len(categories)} categories")
-            
-            # 2. Pension Growth (Smooth line chart - NO points)
+       
             pension_growth = charts.get("pension_growth")
             if pension_growth and isinstance(pension_growth, dict):
                 values = pension_growth.get("data", {}).get("values", [])
@@ -348,7 +323,6 @@ def create_visualizer_node():
                     ages = [v.get("age") for v in values]
                     pension_values = [v.get("projected_value") for v in values]
                     if ages and pension_values:
-                        # Use the CORRECTED data from our calculation
                         plotly_figs["pension_growth"] = {
                             "data": [
                                 {
@@ -383,7 +357,6 @@ def create_visualizer_node():
                         print(f"🔍 Plotly: Created pension_growth line chart with {len(ages)} data points")
                         print(f"🔍 Plotly: Final value: £{pension_values[-1]:,.0f} (should match £2,922,252)")
             
-            # 3. Savings Analysis (ONLY 2 bars)
             savings_analysis = charts.get("savings_analysis")
             if savings_analysis and isinstance(savings_analysis, dict):
                 values = savings_analysis.get("data", {}).get("values", [])
@@ -424,7 +397,6 @@ def create_visualizer_node():
                             ]
                         }
                     }
-                    # Also create with alternative name
                     plotly_figs["savings_analysis_chart"] = plotly_figs["savings_analysis"]
                     print(f"🔍 Plotly: Created savings_analysis bar chart with {len(categories)} categories")
         except Exception as e:
@@ -433,25 +405,21 @@ def create_visualizer_node():
 
         messages = list(state["messages"])  # type: ignore
         
-        # Add chart information to messages safely
+
         try:
-            # Don't add any chart information to messages - let the frontend handle charts silently
-            # Only add a simple confirmation that the query was processed
+
             messages.append(AIMessage(content="Your pension analysis is complete with visualizations."))
             
-            # Still add the technical chart data for the frontend
             if chart_images:
                 messages.append(AIMessage(content="[CHART_IMAGES] " + str(chart_images)))
             if plotly_figs:
                 messages.append(AIMessage(content="[PLOTLY_FIGS] " + str(plotly_figs)))
         except Exception as e:
             print(f"⚠ Error adding chart messages: {e}")
-            # Add a simple message if chart processing fails
             messages.append(AIMessage(content="Pension analysis completed."))
 
         updates: Dict[str, Any] = {"messages": messages}
         
-        # Add chart data safely
         try:
             if charts:
                 updates["charts"] = charts
@@ -466,12 +434,10 @@ def create_visualizer_node():
         print(f"🔍 Visualizer: Charts count: {len(charts)}")
         print(f"🔍 Visualizer: Plotly figs count: {len(plotly_figs)}")
         print(f"🔍 Visualizer: Chart images count: {len(chart_images)}")
-        
-        # Debug: Show the actual chart data being created
+
         for chart_name, chart_data in charts.items():
             print(f"🔍 Chart '{chart_name}': mark={chart_data.get('mark')}, data points={len(chart_data.get('data', {}).get('values', []))}")
-        
-        # Debug: Show what Plotly figures are being created
+
         print(f"🔍 Plotly figures being created: {list(plotly_figs.keys())}")
         for fig_name, fig_data in plotly_figs.items():
             if isinstance(fig_data, dict) and "data" in fig_data:
