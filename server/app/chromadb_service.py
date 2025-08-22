@@ -1,4 +1,3 @@
-# File: app/chromadb_service.py
 import chromadb
 from typing import List, Dict, Any, Optional
 import os
@@ -6,7 +5,6 @@ import json
 from uuid import uuid4
 from datetime import datetime, timezone
 
-# Use a persistent client so data survives across process runs
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma_db")
 os.makedirs(CHROMA_PATH, exist_ok=True)
@@ -49,7 +47,6 @@ def query_collection(
         where=where
     )
 
-# --- NEW FUNCTION FOR CONVERSATIONAL MEMORY ---
 def log_conversation_to_chroma(user_id: int, user_query: str, agent_answer: Dict[str, Any]):
     """
     Logs a user's query and the agent's answer to a dedicated ChromaDB collection
