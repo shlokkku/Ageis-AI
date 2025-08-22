@@ -11,16 +11,15 @@ from pathlib import Path
 
 def check_dependencies():
     """Check if required dependencies are installed"""
-    # Map pip package names to their actual import names
     package_mapping = {
         'fastapi': 'fastapi',
         'uvicorn': 'uvicorn',
         'sqlalchemy': 'sqlalchemy',
         'pymysql': 'pymysql',
-        'python-jose': 'jose',  # Fixed: python-jose imports as 'jose'
+        'python-jose': 'jose',  
         'passlib': 'passlib',
         'python-multipart': 'multipart',
-        'python-dotenv': 'dotenv'  # Fixed: python-dotenv imports as 'dotenv'
+        'python-dotenv': 'dotenv'  
     }
     
     missing_packages = []
@@ -59,7 +58,7 @@ def check_env_file():
                 key, value = line.split('=', 1)
                 env_vars[key] = value
     
-    # Check required variables
+
     required_vars = [
         'SECRET_KEY',
         'DB_USER',
@@ -103,7 +102,7 @@ def start_server():
     """Start the FastAPI server"""
     print("\n🚀 Starting Pension AI API Server...")
     
-    # Set environment variables
+
     os.environ.setdefault('HOST', '0.0.0.0')
     os.environ.setdefault('PORT', '8000')
     
@@ -133,27 +132,24 @@ def main():
     print("🏦 Pension AI API Server Setup")
     print("=" * 40)
     
-    # Check dependencies
     if not check_dependencies():
         return 1
     
     print()
     
-    # Check environment configuration
     if not check_env_file():
         return 1
     
     print()
     
-    # Check database connection
     if not check_database():
         return 1
     
     print()
     
-    # Start server
     start_server()
     return 0
 
 if __name__ == "__main__":
     exit(main())
+
