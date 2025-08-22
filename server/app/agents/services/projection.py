@@ -10,7 +10,7 @@ def run_projection_agent(user_data: dict, scenario_params: dict) -> dict:
             return {"error": "Pension type not specified"}
 
         if pension_type == "Defined Contribution":
-            # --- Logic for Defined Contribution Plans (Market-based Projection) ---
+
             
             # 1. Get parameters with validation
             retirement_age = int(scenario_params.get("new_retirement_age") or user_data.get("Retirement_Age_Goal", 65))
@@ -46,7 +46,7 @@ def run_projection_agent(user_data: dict, scenario_params: dict) -> dict:
             nominal_projection = fv_of_savings + fv_of_contributions
 
             # 5. Perform the Inflation-Adjusted Calculation
-            assumed_inflation_rate = 0.025  # Assume a standard 2.5% inflation rate
+            assumed_inflation_rate = 0.025 
             if years_to_grow > 0:
                 inflation_adjusted_projection = nominal_projection / ((1 + assumed_inflation_rate) ** years_to_grow)
             else:
@@ -67,7 +67,6 @@ def run_projection_agent(user_data: dict, scenario_params: dict) -> dict:
             }
 
         elif pension_type == "Defined Benefit":
-            # --- Logic for Defined Benefit Plans (Guaranteed Payout) ---
             return {
                 "pension_type": "Defined Benefit",
                 "projected_amount": user_data.get("Projected_Pension_Amount"),
