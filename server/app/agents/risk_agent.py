@@ -1,12 +1,10 @@
 # File: app/agents/risk_agent.py
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain.prompts import PromptTemplate
-# MODIFIED: Import the FULL list of tools
 from ..tools.tools import all_pension_tools
 
 def create_risk_agent(llm):
     """Factory for the Risk Analysis Agent."""
-    # MODIFIED: Give the agent access to ALL available tools
     tools = all_pension_tools
     
     template = """**FIRST: READ YOUR INPUT CAREFULLY**
