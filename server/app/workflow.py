@@ -5,7 +5,6 @@ from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from functools import partial
 from langgraph.graph.message import add_messages
-import re # Added for guardrail logic
 
 # Import all our modular components
 from .tools.tools import all_pension_tools
@@ -17,7 +16,7 @@ from .agents.visualizer_agent import create_visualizer_node
 from .agents.supervisor import create_supervisor_chain
 
 
-# --- State Definition (Now includes intermediate_steps) ---
+# --- State Definition ---
 class AgentState(TypedDict, total=False):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     next: str
@@ -25,7 +24,7 @@ class AgentState(TypedDict, total=False):
     turns: int
     charts: dict
     chart_images: dict
-    plotly_figures: dict
+    plotly_figs: dict  # Changed from plotly_figures to match visualizer agent
     final_response: dict
     user_id: int  # Add user_id to state
 
@@ -36,7 +35,7 @@ def build_agent_workflow():
     Builds the LangGraph workflow by creating instances of all agents
     and wiring them together.
     """
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
     # Create all agent and supervisor runnables
     risk_agent_runnable = create_risk_agent(llm)
@@ -47,97 +46,7 @@ def build_agent_workflow():
 
     # --- Supervisor Node ---
     def supervisor_node(state: AgentState):
-        # Check if we're returning from a specialist agent (have intermediate_steps)
-        has_specialist_data = bool(state.get("intermediate_steps"))
-        
-        # Check if we have visualization data (charts, plotly_figs, etc.)
-        has_visualization_data = bool(
-            state.get("charts") or 
-            state.get("plotly_figs") or 
-            state.get("chart_images")
-        )
-        
-        if has_visualization_data:
-            # We have visualization data, route to summarizer for final consolidation
-            return {"next": "summarizer", "turns": state.get("turns", 0)}
-        
-        # Check if we have data from specialist agents (second pass routing)
-        if state.get("intermediate_steps"):
-            print(f"🔍 Supervisor: Checking intermediate_steps for tool usage...")
-            print(f"🔍 Supervisor: intermediate_steps = {state.get('intermediate_steps')}")
-            
-            # Extract the original query for visualization decision
-            original_query = ""
-            for msg in state["messages"]:
-                if isinstance(msg, HumanMessage):
-                    original_query = msg.content.lower()
-                    break
-                elif isinstance(msg, dict) and str(msg.get("role", "")).lower() in ("user", "human"):
-                    original_query = msg.get("content", "").lower()
-                    break
-                elif isinstance(msg, tuple) and len(msg) >= 2 and str(msg[0]).lower() in ("user", "human"):
-                    original_query = str(msg[1]).lower()
-                    break
-            
-            # Check what tools were called
-            has_projection = any(
-                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
-                for step in state.get("intermediate_steps", [])
-                if hasattr(step[0], "tool") and step[0].tool == "project_pension"
-            )
-            has_risk = any(
-                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
-                for step in state.get("intermediate_steps", [])
-                if hasattr(step[0], "tool") and step[0].tool == "analyze_risk_profile"
-            )
-            has_fraud = any(
-                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
-                for step in state.get("intermediate_steps", [])
-                if hasattr(step[0], "tool") and step[0].tool == "detect_fraud"
-            )
-            has_financial_modeling = any(
-                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
-                for step in state.get("intermediate_steps", [])
-                if hasattr(step[0], "tool") and step[0].tool == "project_pension"
-            )
-            has_simple_data = any(
-                step[1] if isinstance(step, (list, tuple)) and len(step) == 2 else None
-                for step in state.get("intermediate_steps", [])
-                if hasattr(step[0], "tool") and step[0].tool == "query_knowledge_base"
-            )
-            
-            print(f"🔍 Supervisor: Tool usage detected - has_projection={bool(has_projection)}, has_risk={bool(has_risk)}, has_fraud={bool(has_fraud)}, has_financial_modeling={bool(has_financial_modeling)}, has_simple_data={bool(has_simple_data)}")
-            
-            # Enhanced decision logic for visualization
-            should_visualize = (
-                "chart" in original_query or 
-                "graph" in original_query or 
-                "visual" in original_query or
-                "visualize" in original_query or
-                "show me" in original_query or
-                "display" in original_query or
-                "plot" in original_query or
-                # More flexible visualization triggers
-                any(word in original_query.lower() for word in ["chart", "graph", "visual", "show", "display", "plot"]) or
-                # Only visualize for explicit visualization requests, not general queries
-                (has_projection and ("chart" in original_query or "graph" in original_query or "visual" in original_query)) or
-                (has_risk and ("chart" in original_query or "graph" in original_query)) or
-                (has_fraud and ("chart" in original_query or "graph" in original_query)) or
-                (has_financial_modeling and ("chart" in original_query or "graph" in original_query or "visual" in original_query))
-            )
-            
-            print(f"🔍 Supervisor Decision: original_query='{original_query}', should_visualize={should_visualize}")
-            print(f"   has_projection={has_projection}, has_risk={has_risk}, has_fraud={has_fraud}, has_financial_modeling={has_financial_modeling}, has_simple_data={has_simple_data}")
-            
-            if should_visualize:
-                print("   ✅ Routing to visualizer")
-                return {"next": "visualizer", "turns": state.get("turns", 0)}
-            else:
-                print("   📝 Routing to summarizer")
-                return {"next": "summarizer", "turns": state.get("turns", 0)}
-        
-        # First pass - route to specialist agents based on user query
-        # Apply guardrails first
+        # Simple routing based on query content
         user_query = ""
         for msg in state["messages"]:
             if isinstance(msg, HumanMessage):
@@ -150,97 +59,35 @@ def build_agent_workflow():
                 user_query = str(msg[1])
                 break
         
-        # Initialize should_visualize for first pass (default to False)
-        should_visualize = False
+        query_lower = user_query.lower()
         
-        # Check for blocked content
-        blocked_patterns = {
-            'religious': [
-                r'\b(pray|prayer|god|jesus|allah|buddha|hindu|islam|christian|jewish|religious|spiritual|faith|blessing|divine|heaven|hell)\b',
-                r'\b(amen|hallelujah|om|namaste|shalom|salaam)\b',
-                r'\b(church|mosque|temple|synagogue|worship|meditation)\b'
-            ],
-            'political': [
-                r'\b(democrat|republican|liberal|conservative|left|right|wing|party|election|vote|campaign|politician|senator|congress|president)\b',
-                r'\b(government|administration|policy|legislation|bill|law|regulation)\b',
-                r'\b(progressive|moderate|radical|extremist|activist|protest|rally)\b',
-                r'\bpolitic\w*\b'  # political, politics
-            ],
-            'investment_strategy': [
-                r'\b(buy|sell|hold|stock|shares|equity|market|timing|entry|exit|position|portfolio|allocation)\b',
-                r'\b(day trading|swing trading|momentum|value|growth|dividend|yield)\b',
-                r'\b(cryptocurrency|bitcoin|ethereum|blockchain|ico|token|coin)\b',
-                r'\b(real estate|property|mortgage|loan|credit|debt|leverage)\b',
-                r'\b(hedge fund|private equity|venture capital|startup|ipo|merger|acquisition)\b'
-            ]
-        }
+        # Check if user wants charts/visualizations
+        wants_charts = any(word in query_lower for word in ["graph", "chart", "visual", "show me", "display", "plot"])
         
-        # Check for blocked content
-        should_block = False
-        blocked_category = ""
-        for category, patterns in blocked_patterns.items():
-            for pattern in patterns:
-                if re.search(pattern, user_query.lower()):
-                    should_block = True
-                    blocked_category = category
-                    break
-            if should_block:
-                break
-        
-        if should_block:
-            print(f"🔍 Supervisor: Guardrail triggered for {blocked_category} content")
-            # Create appropriate guardrail response
-            guardrail_response = (
-                "I apologize, but I cannot process this request. "
-                "I am a pension analysis system designed to help with: "
-                "• Pension projections and calculations "
-                "• Risk assessment and portfolio analysis "
-                "• Fraud detection and transaction monitoring "
-                "• Financial data visualization "
-                "\n\nI cannot provide advice on religious matters, political topics, "
-                "or specific investment strategies. Please rephrase your question "
-                "to focus on pension analysis, risk assessment, or fraud detection."
-            )
-            
-            return {
-                "next": "FINISH",  # Add routing to end workflow
-                "messages": state["messages"] + [AIMessage(content=guardrail_response)],
-                "final_response": {
-                    "summary": guardrail_response,
-                    "charts": {},
-                    "plotly_figs": {},
-                    "chart_images": {}
-                }
-            }
-        
-        # If no guardrail violation, proceed with normal routing
-        if hasattr(supervisor_chain_runnable, 'invoke'):
-            resp = supervisor_chain_runnable.invoke({"messages": state["messages"]})
+        # Simple routing logic
+        if any(word in query_lower for word in ["risk", "volatility", "diversity", "debt"]):
+            next_value = "risk_analyst"
+        elif any(word in query_lower for word in ["fraud", "suspicious", "anomaly", "transaction"]):
+            next_value = "fraud_detector"
+        elif any(word in query_lower for word in ["projection", "growth", "future", "years", "retire", "savings", "income", "contribution"]):
+            next_value = "projection_specialist"
         else:
-            # Support function-style runnables
-            resp = supervisor_chain_runnable({"messages": state["messages"]})
-        if isinstance(resp, dict):
-            next_value = resp.get("next") or resp.get("output") or resp.get("text")
-        else:
-            next_value = getattr(resp, "next", None) or (resp if isinstance(resp, str) else None)
+            next_value = "projection_specialist"  # Default to pension specialist
         
-        # Increment loop counter to avoid infinite routing
-        new_turns = int(state.get("turns", 0)) + 1
-        if new_turns >= 5:
-            next_value = "FINISH"
-        if not next_value:
-            next_value = "FINISH"
-        return {"next": next_value, "turns": new_turns}
+        print(f"🔍 Supervisor: Routing to {next_value}")
+        print(f"🔍 Supervisor: User wants charts: {wants_charts}")
+        
+        # Store chart request flag in state for later use
+        return {"next": next_value, "wants_charts": wants_charts}
 
     # --- Generic Agent Runner ---
     def agent_node(state: AgentState, agent_runnable):
-        # Find the latest user message content, supporting both HumanMessage and tuple-style ("user", text)
+        # Find the latest user message content
         last_user_text = None
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
                 last_user_text = msg.content
                 break
-            # Support tuple/dict-like messages e.g., ("user", "..."), {"role":"user","content":"..."}
             if isinstance(msg, tuple) and len(msg) >= 2 and str(msg[0]).lower() in ("user", "human"):
                 last_user_text = msg[1]
                 break
@@ -263,44 +110,30 @@ def build_agent_workflow():
         if user_id:
             agent_input["user_id"] = user_id
             print(f"🔍 Workflow: Passing user_id={user_id} to agent")
-            print(f"🔍 Workflow: Full agent_input={agent_input}")
         else:
             print(f"⚠️ Workflow: No user_id found in state: {state.keys()}")
 
         result = agent_runnable(agent_input)
 
-        # Normalize result into messages and propagate intermediate steps (tools used)
-        new_messages: List[BaseMessage] = list(state["messages"])  # type: ignore[arg-type]
+        # Normalize result into messages and capture intermediate steps
+        new_messages: List[BaseMessage] = list(state["messages"])
         new_intermediate_steps = list(state.get("intermediate_steps", []))
-
+        
         final_text = None
-        tools_summary = None
-
         if isinstance(result, str):
             final_text = result
         elif isinstance(result, dict):
             final_text = result.get("output") or result.get("content") or result.get("text")
-            steps_result = result.get("intermediate_steps")
-            if steps_result:
-                # steps_result is typically a list of (AgentAction, observation) tuples
-                try:
-                    tools_summary = []
-                    for action, observation in steps_result:
-                        tool_name = getattr(action, "tool", None) or getattr(action, "tool_name", None) or "tool"
-                        tool_input = getattr(action, "tool_input", None) or getattr(action, "input", None)
-                        tools_summary.append(f"{tool_name}({tool_input}) -> {str(observation)[:200]}")
-                    new_intermediate_steps.extend(steps_result)
-                    tools_summary = "\n".join(tools_summary)
-                except Exception:
-                    pass
+            # Capture intermediate steps from agent result
+            if result.get("intermediate_steps"):
+                new_intermediate_steps.extend(result["intermediate_steps"])
         else:
             final_text = str(result)
 
         if final_text:
             new_messages.append(AIMessage(content=final_text))
-        if tools_summary:
-            new_messages.append(AIMessage(content=f"[Tools executed]\n{tools_summary}"))
 
+        # Return both messages and intermediate steps
         updates = {"messages": new_messages}
         if new_intermediate_steps:
             updates["intermediate_steps"] = new_intermediate_steps
@@ -308,16 +141,15 @@ def build_agent_workflow():
 
     # --- Summarizer Node ---
     def summarizer_node(state: AgentState):
-        # Call the summarizer function directly (it returns a function, not a chain)
+        # Call the summarizer function directly
         summary_result = summarizer_chain_runnable(state)
         
         # Extract the final response if available
         final_response = summary_result.get("final_response", {})
         
-        # Add the summary message
-        new_messages = list(state["messages"])
         if final_response:
             # Add the structured final response
+            new_messages = list(state["messages"])
             new_messages.append(AIMessage(content=final_response.get("summary", "Summary completed.")))
             # Store the final response in state for frontend access
             return {
@@ -332,6 +164,7 @@ def build_agent_workflow():
                 summary_text = summary_result.get("output") or summary_result.get("content") or summary_result.get("text") or str(summary_result)
             else:
                 summary_text = getattr(summary_result, "content", None) or str(summary_result)
+            
             return {"messages": state["messages"] + [AIMessage(content=summary_text)]}
 
     # --- Visualization Node ---
@@ -359,16 +192,15 @@ def build_agent_workflow():
         "projection_specialist": "projection_specialist",
         "summarizer": "summarizer",
         "visualizer": "visualizer",
-        "FINISH": END,
     })
 
-    # After specialist agents -> return to supervisor for intelligent routing
-    workflow.add_edge("risk_analyst", "supervisor")
-    workflow.add_edge("fraud_detector", "supervisor")
-    workflow.add_edge("projection_specialist", "supervisor")
+    # After specialist agents -> go to visualizer (for charts)
+    workflow.add_edge("risk_analyst", "visualizer")
+    workflow.add_edge("fraud_detector", "visualizer")
+    workflow.add_edge("projection_specialist", "visualizer")
 
-    # After visualizer -> return to supervisor for final routing decision
-    workflow.add_edge("visualizer", "supervisor")
+    # After visualizer -> go to summarizer
+    workflow.add_edge("visualizer", "summarizer")
 
     # After summarizer -> workflow ends
     workflow.add_edge("summarizer", END)
@@ -378,7 +210,7 @@ def build_agent_workflow():
 
 # Compile and make available
 graph = build_agent_workflow()
-print("✅ Modular multi-agent graph compiled successfully.")
+print("✅ Simple multi-agent graph compiled successfully.")
 
 
 def save_graph_image():

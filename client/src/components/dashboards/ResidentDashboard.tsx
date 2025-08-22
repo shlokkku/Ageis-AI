@@ -125,6 +125,19 @@ const ResidentDashboard: React.FC = () => {
       
       console.log('AI API Response:', response);
       
+      // Debug chart data
+      if (response.chart_data) {
+        console.log('Chart data received:', response.chart_data);
+        console.log('Chart data keys:', Object.keys(response.chart_data));
+        console.log('First chart structure:', response.chart_data[Object.keys(response.chart_data)[0]]);
+        console.log('Chart data type:', typeof response.chart_data);
+        console.log('Chart data length:', Object.keys(response.chart_data).length);
+      } else {
+        console.log('No chart_data in response');
+        console.log('Available response keys:', Object.keys(response));
+        console.log('Full response:', response);
+      }
+      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
@@ -271,9 +284,15 @@ const ResidentDashboard: React.FC = () => {
                       <p className="text-sm leading-relaxed">{message.content}</p>
                        
                       {/* Enhanced Chart Display */}
+                      {(() => {
+                        console.log('Rendering charts with data:', message.chartData);
+                        return null;
+                      })()}
                       {message.chartData && Object.keys(message.chartData).length > 0 && (
                         <div className="mt-4 space-y-4">
-                          {Object.entries(message.chartData).map(([chartKey, chartConfig]: [string, any]) => (
+                          {Object.entries(message.chartData).map(([chartKey, chartConfig]: [string, any]) => {
+                            console.log(`Rendering chart ${chartKey}:`, chartConfig);
+                            return (
                             <div key={chartKey} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                               <div className="flex items-center space-x-2 mb-3">
                                 <ChartBarIcon className="h-5 w-5 text-blue-500" />
@@ -285,12 +304,17 @@ const ResidentDashboard: React.FC = () => {
                                 <Plot
                                   data={[
                                     {
-                                      x: chartConfig.data.values.map((v: any) => v[Object.keys(v)[0]]),
-                                      y: chartConfig.data.values.map((v: any) => v[Object.keys(v)[1]]),
+                                      // Handle different chart types based on mark type
+                                      x: chartConfig.mark === 'bar' 
+                                        ? chartConfig.data.values.map((v: any) => v.category || v.metric || Object.values(v)[0])
+                                        : chartConfig.data.values.map((v: any) => v.age || v[Object.keys(v)[0]]),
+                                      y: chartConfig.mark === 'bar'
+                                        ? chartConfig.data.values.map((v: any) => v.amount || v.value || v[Object.keys(v)[1]])
+                                        : chartConfig.data.values.map((v: any) => v.projected_value || v[Object.keys(v)[1]]),
                                       type: chartConfig.mark === 'bar' ? 'bar' : 'scatter',
-                                      mode: chartConfig.mark === 'line' ? 'lines+markers' : undefined,
+                                      mode: chartConfig.mark === 'line' ? 'lines' : undefined,
                                       marker: {
-                                        color: '#3B82F6',
+                                        color: chartConfig.mark === 'bar' ? ['#3B82F6', '#10B981', '#F59E0B'] : '#3B82F6',
                                         size: 8
                                       },
                                       line: {
@@ -303,8 +327,14 @@ const ResidentDashboard: React.FC = () => {
                                     width: 400,
                                     height: 300,
                                     margin: { l: 50, r: 20, t: 20, b: 50 },
-                                    xaxis: { title: chartConfig.encoding?.x?.title || '' },
-                                    yaxis: { title: chartConfig.encoding?.y?.title || '' },
+                                    xaxis: { 
+                                      title: chartConfig.encoding?.x?.title || '',
+                                      gridcolor: '#e0e0e0'
+                                    },
+                                    yaxis: { 
+                                      title: chartConfig.encoding?.y?.title || '',
+                                      gridcolor: '#e0e0e0'
+                                    },
                                     showlegend: false,
                                     plot_bgcolor: 'rgba(0,0,0,0)',
                                     paper_bgcolor: 'rgba(0,0,0,0)',
@@ -313,7 +343,8 @@ const ResidentDashboard: React.FC = () => {
                                 />
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                        

@@ -24,17 +24,18 @@ function App() {
   useEffect(() => {
     const checkAuth = () => {
       const authenticated = tokenManager.isAuthenticated();
-              const user = tokenManager.getUser();
+      const user = tokenManager.getUser();
       
       setIsAuthenticated(authenticated);
       setCurrentUser(user);
       
-      // If authenticated, redirect to appropriate dashboard
-      if (authenticated && user) {
-        setCurrentPage(user.role === 'resident' ? 'resident' : 
-                     user.role === 'advisor' ? 'advisor' : 
-                     user.role === 'regulator' ? 'regulator' : 'resident');
-      }
+      // Only redirect to dashboard if user explicitly navigates there
+      // Don't auto-redirect on app load - always start with landing page
+      // if (authenticated && user) {
+      //   setCurrentPage(user.role === 'resident' ? 'resident' : 
+      //                user.role === 'advisor' ? 'advisor' : 
+      //                user.role === 'regulator' ? 'regulator' : 'resident');
+      // }
     };
 
     checkAuth();

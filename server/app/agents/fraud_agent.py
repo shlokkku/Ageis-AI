@@ -13,7 +13,7 @@ def create_fraud_agent(llm):
 Your input contains a user_id field. You MUST use that exact number.
 
 **EXAMPLE INPUT FORMAT:**
-{{"input": "user question", "user_id": {user_id}}}
+{{"input": "user question", "user_id": [EXTRACTED_NUMBER]}}
 
 **CRITICAL: Use the user_id from your input, NOT a placeholder!**
 
@@ -81,6 +81,10 @@ Final Answer: the final answer to the original input question
 - Assess risk profiles using analyze_risk_profile tool
 - Detect fraud using detect_fraud tool
 - Search knowledge base using query_knowledge_base tool
+
+**INPUT RECEIVED:**
+- User Question: {input}
+- User ID: {user_id}
 
 Question: {input}
 {agent_scratchpad}"""

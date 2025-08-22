@@ -15,7 +15,7 @@ from .database import Base, engine, get_db
 from . import models, security, schemas
 from .workflow import graph
 from file_ingestion import ingest_pdf_to_chroma
-from .tools.tools import set_request_user_id, clear_request_user_id
+from .tools.tools import set_request_user_id, clear_request_user_id, set_request_query
 
 app = FastAPI(title="Pension AI API", version="1.0.0")
 
@@ -185,6 +185,7 @@ async def process_prompt(
     try:
         # Set user context for this request
         set_request_user_id(current_user.id)
+        set_request_query(request.query)  # Set query context for role-based detection
         
         # Execute the workflow with the user's query AND user_id
         result = graph.invoke({
@@ -192,8 +193,30 @@ async def process_prompt(
             'user_id': current_user.id  # Pass user_id directly to workflow
         })
         
+        # 🔍 DEBUG: Log what the workflow is returning
+        print(f"🔍 DEBUG: Workflow result keys: {result.keys()}")
+        print(f"🔍 DEBUG: Workflow result: {result}")
+        
         # Extract the final response
         final_response = result.get('final_response', {})
+        
+        # 🔍 DEBUG: Log the final response
+        print(f"🔍 DEBUG: Final response: {final_response}")
+        
+        # 🔍 DEBUG: Log chart data specifically
+        print(f"🔍 DEBUG: Charts in final_response: {final_response.get('charts', {})}")
+        print(f"🔍 DEBUG: Plotly figs in final_response: {final_response.get('plotly_figs', {})}")
+        print(f"🔍 DEBUG: Chart images in final_response: {final_response.get('chart_images', {})}")
+        
+        # Check if we have messages with content
+        messages = result.get('messages', [])
+        if messages and not final_response.get('summary'):
+            # Try to get the last AI message as fallback
+            for msg in reversed(messages):
+                if hasattr(msg, 'content') and msg.content and msg.content != "⚠️ No user message found to process.":
+                    print(f"🔍 DEBUG: Found message content: {msg.content[:100]}...")
+                    final_response['summary'] = msg.content
+                    break
         
         # Return structured response
         return PromptResponse(

@@ -7,8 +7,10 @@ import {
   BoltIcon, 
   UserGroupIcon, 
   CheckCircleIcon, 
-  ChartBarIcon 
+  ChartBarIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline';
+import { tokenManager } from '../services/api';
 
 interface PensionAILandingProps {
   onNavigate: (page: string) => void;
@@ -130,18 +132,33 @@ const PensionAILanding: React.FC<PensionAILandingProps> = ({ onNavigate }) => {
             </span>
           </div>
           <div className="flex items-center space-x-4">
-            <button 
-              onClick={() => onNavigate('login')}
-              className="text-gray-700 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 font-medium"
-            >
-              Login
-            </button>
-            <button 
-              onClick={() => onNavigate('signup')}
-              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-2 rounded-full hover:shadow-lg transform hover:scale-105 transition-all duration-300 font-medium"
-            >
-              Sign Up
-            </button>
+            {tokenManager.isAuthenticated() ? (
+              <button 
+                onClick={() => {
+                  tokenManager.logout();
+                  window.location.reload();
+                }}
+                className="flex items-center space-x-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors duration-200"
+              >
+                <ArrowRightOnRectangleIcon className="h-4 w-4" />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
+            ) : (
+              <>
+                <button 
+                  onClick={() => onNavigate('login')}
+                  className="text-gray-700 hover:text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 font-medium"
+                >
+                  Login
+                </button>
+                <button 
+                  onClick={() => onNavigate('signup')}
+                  className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-6 py-2 rounded-full hover:shadow-lg transform hover:scale-105 transition-all duration-300 font-medium"
+                >
+                  Sign Up
+                </button>
+              </>
+            )}
           </div>
         </div>
       </nav>
