@@ -1,4 +1,3 @@
-# File: app/agents/supervisor.py
 from typing import Literal
 from langchain_core.pydantic_v1 import BaseModel
 from langchain.prompts import ChatPromptTemplate
@@ -13,7 +12,6 @@ def create_supervisor_chain(llm):
     def validate_query_content(query: str) -> tuple[bool, str]:
         """Validate query content and return (is_valid, reason_if_invalid)"""
         
-        # Define blocked content patterns
         blocked_patterns = {
             'religious': [
                 r'\b(pray|prayer|god|jesus|allah|buddha|hindu|islam|christian|jewish|religious|spiritual|faith|blessing|divine|heaven|hell)\b',
@@ -101,9 +99,8 @@ User's question:
 {messages}"""
     )
     
-    # Create a chain that validates input first
+   
     def supervisor_with_guardrails(state):
-        # Extract the user query from messages
         messages = state.get("messages", [])
         user_query = ""
         for msg in messages:
@@ -119,32 +116,29 @@ User's question:
         
         print(f"🔍 Supervisor: Processing query: '{user_query}'")
         
-        # Check for PDF/document queries first (highest priority)
+
         pdf_keywords = ["uploaded", "document", "pdf", "plan", "policy", "this document", "my document", "pension plan"]
         if any(keyword in user_query.lower() for keyword in pdf_keywords):
             print(f"🔍 Supervisor: PDF query detected, routing to projection_specialist")
             return {"next": "projection_specialist"}
-        
-        # Apply input validation
+  
         is_valid, reason = validate_query_content(user_query)
         print(f"🔍 Supervisor: Content validation - is_valid: {is_valid}, reason: {reason}")
         
         if not is_valid:
-            # Return the format the workflow expects
+            
             result = {"next": "FINISH"}
             print(f"🔍 Supervisor: Guardrail triggered, returning: {result}")
             return result
         
-        # If valid, proceed with normal routing
+        
         try:
             router_result = (supervisor_prompt | llm.with_structured_output(Router)).invoke({"messages": messages})
-            # Convert Router object to expected format
             result = {"next": router_result.next}
             print(f"🔍 Supervisor: Normal routing, returning: {result}")
             return result
         except Exception as e:
             print(f"🔍 Supervisor: Error in routing: {e}")
-            # Fallback to projection_specialist for pension-related queries
             if any(word in user_query.lower() for word in ["pension", "retirement", "savings", "growth"]):
                 result = {"next": "projection_specialist"}
             else:
@@ -152,9 +146,8 @@ User's question:
             print(f"🔍 Supervisor: Fallback routing, returning: {result}")
             return result
     
-    # Add a pre-routing check for PDF queries
+
     def enhanced_supervisor_with_guardrails(state):
-        # Extract the user query from messages
         messages = state.get("messages", [])
         user_query = ""
         for msg in messages:
@@ -170,32 +163,27 @@ User's question:
         
         print(f"🔍 Supervisor: Processing query: '{user_query}'")
         
-        # Check for PDF/document queries first (highest priority)
+
         pdf_keywords = ["uploaded", "document", "pdf", "plan", "policy", "this document", "my document", "pension plan"]
         if any(keyword in user_query.lower() for keyword in pdf_keywords):
             print(f"🔍 Supervisor: PDF query detected, routing to projection_specialist")
             return {"next": "projection_specialist"}
         
-        # Apply input validation
         is_valid, reason = validate_query_content(user_query)
         print(f"🔍 Supervisor: Content validation - is_valid: {is_valid}, reason: {reason}")
         
         if not is_valid:
-            # Return the format the workflow expects
             result = {"next": "FINISH"}
             print(f"🔍 Supervisor: Guardrail triggered, returning: {result}")
             return result
-        
-        # If valid, proceed with normal routing
+\
         try:
             router_result = (supervisor_prompt | llm.with_structured_output(Router)).invoke({"messages": messages})
-            # Convert Router object to expected format
             result = {"next": router_result.next}
             print(f"🔍 Supervisor: Normal routing, returning: {result}")
             return result
         except Exception as e:
             print(f"🔍 Supervisor: Error in routing: {e}")
-            # Fallback to projection_specialist for pension-related queries
             if any(word in user_query.lower() for word in ["pension", "retirement", "savings", "growth"]):
                 result = {"next": "projection_specialist"}
             else:
