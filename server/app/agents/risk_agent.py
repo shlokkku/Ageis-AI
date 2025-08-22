@@ -1,4 +1,3 @@
-# File: app/agents/risk_agent.py
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain.prompts import PromptTemplate
 from ..tools.tools import all_pension_tools
