@@ -1,4 +1,3 @@
-# File: app/agents/summarizer_agent.py
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage
 import re
@@ -29,7 +28,7 @@ def create_summarizer_chain(llm):
                 r'\b(democrat|republican|liberal|conservative|left|right|wing|party|election|vote|campaign|politician|senator|congress|president)\b',
                 r'\b(government|administration|policy|legislation|bill|law|regulation)\b',
                 r'\b(progressive|moderate|radical|extremist|activist|protest|rally)\b',
-                r'\bpolitic\w*\b'  # political, politics
+                r'\bpolitic\w*\b' 
             ],
             'investment_strategy': [
                 r'\b(buy\s+this\s+stock|sell\s+that\s+stock|invest\s+in\s+bitcoin|buy\s+crypto|day\s+trading|swing\s+trading)\b',
@@ -67,10 +66,8 @@ def create_summarizer_chain(llm):
         return text
     
     def summarizer_with_charts(state):
-        # Get the text summary from the LLM
         summary_result = (summarizer_prompt | llm).invoke({"messages": state["messages"]})
         
-        # Extract the summary text
         if isinstance(summary_result, str):
             summary_text = summary_result
         elif hasattr(summary_result, 'content'):
@@ -78,21 +75,19 @@ def create_summarizer_chain(llm):
         else:
             summary_text = str(summary_result)
         
-        # Apply content guardrails
         summary_text = apply_content_guardrails(summary_text)
         
-        # 🔍 EXTRACT DATA SOURCE INDICATORS FROM TOOL RESULTS (NEW ADDITION)
         data_source = "DATABASE_PENSION_DATA"  # Default
         search_type = None
         pdf_status = None
         
-        # Check intermediate_steps for tool results
+    
         if state.get("intermediate_steps"):
             for step in state["intermediate_steps"]:
                 if hasattr(step, 'tool') and hasattr(step, 'content'):
                     tool_result = step.content
                     if isinstance(tool_result, str):
-                        # Try to extract JSON from tool result
+                        
                         try:
                             import json
                             result_data = json.loads(tool_result)
@@ -111,13 +106,11 @@ def create_summarizer_chain(llm):
             "charts": state.get("charts", {}),
             "plotly_figs": state.get("plotly_figs", {}),
             "chart_images": state.get("chart_images", {}),
-            # 🔍 ADD THE INDICATORS (NEW ADDITION)
             "data_source": data_source,
             "search_type": search_type,
             "pdf_status": pdf_status
         }
         
-        # Add the structured response as a message
         new_messages = list(state["messages"])
         new_messages.append(AIMessage(content=f"[FINAL_RESPONSE] {str(final_response)}"))
         
